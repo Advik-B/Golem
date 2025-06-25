@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,6 +21,7 @@ type Connection struct {
 	server *Server
 	conn   net.Conn
 	state  ConnectionState
+	player *Player
 }
 
 func NewConnection(server *Server, conn net.Conn) *Connection {
@@ -34,54 +36,33 @@ func (c *Connection) Close() {
 	c.conn.Close()
 }
 
-// HandleLogin processes packets up until the login sequence is complete and transitions to configuration.
-func (c *Connection) HandleLogin() {
-	// Loop until we are no longer in Handshaking or Status. We should end in the Login state.
-	for c.state == StateHandshaking || c.state == StateStatus {
-		packet, err := c.ReadPacket()
-		if err != nil {
-			if err != io.EOF {
-				fmt.Printf("Error reading packet from %s during pre-login: %v\n", c.conn.RemoteAddr(), err)
-			}
-			return
-		}
-		err = c.handlePacket(packet)
-		if err != nil {
-			fmt.Printf("Error handling packet from %s during pre-login: %v\n", c.conn.RemoteAddr(), err)
-			return
-		}
-	}
-
-	// Now that we are in the Login state, we handle the final login packet.
-	// This will transition the player to the PlayerManager and the Configuration state.
-	loginPacket, err := c.ReadPacket()
-	if err != nil {
-		fmt.Printf("Error reading login start packet: %v\n", err)
-		return
-	}
-	_ = c.handleLogin(loginPacket)
-}
-
-// Handle is the main loop for a player that is already in the game (or in configuration).
 func (c *Connection) Handle() {
+	defer c.Close()
+
 	for {
 		packet, err := c.ReadPacket()
 		if err != nil {
 			if err != io.EOF {
-				fmt.Printf("Error reading packet from %s: %v\n", c.conn.RemoteAddr(), err)
+				// Don't log timeout errors during ping, as they are expected
+				// if the client disconnects first. Any other read error is a problem.
+				if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+					fmt.Printf("Error reading packet from %s: %v\n", c.conn.RemoteAddr(), err)
+				}
 			}
 			return
 		}
 
 		err = c.handlePacket(packet)
 		if err != nil {
+			// Check if it's our special "clean exit" signal.
+			if errors.Is(err, ErrPingComplete) {
+				// This is expected. Break the loop and close the connection gracefully.
+				return
+			}
+
+			// It's a real, unexpected error. Log it and close.
 			fmt.Printf("Error handling packet from %s: %v\n", c.conn.RemoteAddr(), err)
 			return
-		}
-
-		// If we've successfully transitioned out of Play, the connection is over.
-		if c.state != StatePlay && c.state != StateConfiguration {
-			break
 		}
 	}
 }
