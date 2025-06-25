@@ -1,8 +1,8 @@
 package server
 
 import (
-	"fmt"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"sync"
 )
 
@@ -43,7 +43,11 @@ func (pm *PlayerManager) AddPlayer(c *Connection, username string, playerUUID uu
 	c.player = player
 	pm.players[playerUUID] = player
 
-	fmt.Printf("Player %s [%s] added to PlayerManager.\n", username, playerUUID)
+	Log.Info("Player added to manager",
+		zap.String("username", username),
+		zap.Stringer("uuid", playerUUID),
+		zap.String("remoteAddr", c.conn.RemoteAddr().String()),
+	)
 
 	return player
 }
@@ -63,7 +67,10 @@ func (pm *PlayerManager) RemovePlayer(player *Player) {
 	if _, ok := pm.players[player.UUID]; ok {
 		delete(pm.players, player.UUID)
 		player.Conn.Close()
-		fmt.Printf("Player %s disconnected.\n", player.Username)
+		Log.Info("Player disconnected",
+			zap.String("username", player.Username),
+			zap.Stringer("uuid", player.UUID),
+		)
 	}
 }
 
@@ -84,6 +91,8 @@ func (pm *PlayerManager) RemovePlayerByConn(c *Connection) {
 	if c.player != nil {
 		pm.RemovePlayer(c.player)
 	} else {
-		fmt.Printf("Connection from %s closed before login.\n", c.conn.RemoteAddr())
+		Log.Debug("Connection closed before login",
+			zap.String("remoteAddr", c.conn.RemoteAddr().String()),
+		)
 	}
 }
