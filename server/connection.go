@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"io"
 	"net"
 )
@@ -42,11 +43,15 @@ func (c *Connection) Handle() {
 	for {
 		packet, err := c.ReadPacket()
 		if err != nil {
-			if err != io.EOF {
-				// Don't log timeout errors during ping, as they are expected
-				// if the client disconnects first. Any other read error is a problem.
-				if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
-					fmt.Printf("Error reading packet from %s: %v\n", c.conn.RemoteAddr(), err)
+			if !errors.Is(err, io.EOF) {
+				// Don't log timeout errors, as they are common when a client pings and disconnects.
+				// Any other read error is worth noting as a warning.
+				var netErr net.Error
+				if !errors.As(err, &netErr) || !netErr.Timeout() {
+					Log.Warn("Error reading packet",
+						zap.String("remoteAddr", c.conn.RemoteAddr().String()),
+						zap.Error(err),
+					)
 				}
 			}
 			return
@@ -54,14 +59,18 @@ func (c *Connection) Handle() {
 
 		err = c.handlePacket(packet)
 		if err != nil {
-			// Check if it's our special "clean exit" signal.
+			// Check if it's our special "clean exit" signal for pings.
 			if errors.Is(err, ErrPingComplete) {
 				// This is expected. Break the loop and close the connection gracefully.
 				return
 			}
 
 			// It's a real, unexpected error. Log it and close.
-			fmt.Printf("Error handling packet from %s: %v\n", c.conn.RemoteAddr(), err)
+			Log.Error("Error handling packet",
+				zap.String("remoteAddr", c.conn.RemoteAddr().String()),
+				zap.Int32("packetID", packet.ID),
+				zap.Error(err),
+			)
 			return
 		}
 	}
