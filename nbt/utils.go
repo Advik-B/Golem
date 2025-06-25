@@ -1,21 +1,22 @@
 package nbt
 
 import (
+	"bytes"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 )
 
 // CompareTags compares two NBT tags for equality. If partial is true, it checks if `a` is a subset of `b`.
+// This version is more explicit and avoids reflect.DeepEqual pitfalls.
 func CompareTags(a, b Tag, partial bool) bool {
 	if a == b {
 		return true
 	}
-	if a == nil {
-		return true // A nil tag is a subset of any tag
+	if a == nil && partial {
+		return true
 	}
-	if b == nil {
+	if a == nil || b == nil {
 		return false
 	}
 	if a.ID() != b.ID() {
@@ -23,8 +24,90 @@ func CompareTags(a, b Tag, partial bool) bool {
 	}
 
 	switch ta := a.(type) {
+	case *EndTag:
+		_, ok := b.(*EndTag)
+		return ok
+	case *ByteTag:
+		tb, ok := b.(*ByteTag)
+		return ok && ta.Value == tb.Value
+	case *ShortTag:
+		tb, ok := b.(*ShortTag)
+		return ok && ta.Value == tb.Value
+	case *IntTag:
+		tb, ok := b.(*IntTag)
+		return ok && ta.Value == tb.Value
+	case *LongTag:
+		tb, ok := b.(*LongTag)
+		return ok && ta.Value == tb.Value
+	case *FloatTag:
+		tb, ok := b.(*FloatTag)
+		return ok && ta.Value == tb.Value
+	case *DoubleTag:
+		tb, ok := b.(*DoubleTag)
+		return ok && ta.Value == tb.Value
+	case *StringTag:
+		tb, ok := b.(*StringTag)
+		return ok && ta.Value == tb.Value
+	case *ByteArrayTag:
+		tb, ok := b.(*ByteArrayTag)
+		return ok && bytes.Equal(ta.Value, tb.Value)
+	case *IntArrayTag:
+		tb, ok := b.(*IntArrayTag)
+		if !ok || len(ta.Value) != len(tb.Value) {
+			return false
+		}
+		for i := range ta.Value {
+			if ta.Value[i] != tb.Value[i] {
+				return false
+			}
+		}
+		return true
+	case *LongArrayTag:
+		tb, ok := b.(*LongArrayTag)
+		if !ok || len(ta.Value) != len(tb.Value) {
+			return false
+		}
+		for i := range ta.Value {
+			if ta.Value[i] != tb.Value[i] {
+				return false
+			}
+		}
+		return true
+	case *ListTag:
+		tb, ok := b.(*ListTag)
+		if !ok || ta.Type != tb.Type {
+			return false
+		}
+		if !partial && len(ta.Value) != len(tb.Value) {
+			return false
+		}
+		if partial {
+		outer:
+			for _, valA := range ta.Value {
+				for _, valB := range tb.Value {
+					if CompareTags(valA, valB, true) {
+						continue outer
+					}
+				}
+				return false // No match found for valA
+			}
+			return true
+		}
+		// Full comparison
+		if len(ta.Value) != len(tb.Value) {
+			return false
+		}
+		for i := range ta.Value {
+			if !CompareTags(ta.Value[i], tb.Value[i], false) {
+				return false
+			}
+		}
+		return true
 	case *CompoundTag:
-		tb := b.(*CompoundTag)
+		tb, ok := b.(*CompoundTag)
+		if !ok {
+			return false
+		}
 		if !partial && len(ta.Value) != len(tb.Value) {
 			return false
 		}
@@ -35,28 +118,9 @@ func CompareTags(a, b Tag, partial bool) bool {
 			}
 		}
 		return true
-
-	case *ListTag:
-		tb := b.(*ListTag)
-		if !partial && len(ta.Value) != len(tb.Value) {
-			return false
-		}
-		if partial {
-		outer:
-			for _, valA := range ta.Value {
-				for _, valB := range tb.Value {
-					if CompareTags(valA, valB, partial) {
-						continue outer
-					}
-				}
-				return false // No match found for valA
-			}
-			return true
-		}
-		return reflect.DeepEqual(ta, tb)
-
 	default:
-		return reflect.DeepEqual(a, b)
+		// Should not be reached if all types are handled
+		return false
 	}
 }
 
