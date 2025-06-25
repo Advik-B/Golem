@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/Tnze/go-mc/nbt"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"io"
 )
 
@@ -43,12 +44,13 @@ func (c *Connection) handleHandshake(p Packet) error {
 	data = data[2:] // Skip Server Port
 	nextState, _ := readVarIntFromBytes(data)
 
+	addr := c.conn.RemoteAddr().String()
 	if nextState == 1 {
 		c.state = StateStatus
-		fmt.Printf("Connection from %s transitioned to Status state\n", c.conn.RemoteAddr())
+		Log.Debug("Transitioned to Status state", zap.String("remoteAddr", addr))
 	} else if nextState == 2 {
 		c.state = StateLogin
-		fmt.Printf("Connection from %s transitioned to Login state\n", c.conn.RemoteAddr())
+		Log.Debug("Transitioned to Login state", zap.String("remoteAddr", addr))
 	} else {
 		return fmt.Errorf("unknown next state: %d", nextState)
 	}
@@ -73,7 +75,11 @@ func (c *Connection) handleLogin(p Packet) error {
 	playerName, _ := readStringFromBytes(p.Data)
 	playerUUID := uuid.New()
 
-	fmt.Printf("Player %s with UUID %s is attempting to log in...\n", playerName, playerUUID)
+	Log.Info("Player login attempt",
+		zap.String("username", playerName),
+		zap.Stringer("uuid", playerUUID),
+		zap.String("remoteAddr", c.conn.RemoteAddr().String()),
+	)
 
 	// Add the player to the manager and associate it with THIS connection.
 	c.server.PlayerManager.AddPlayer(c, playerName, playerUUID)
@@ -96,18 +102,21 @@ func (c *Connection) handleLogin(p Packet) error {
 }
 
 func (c *Connection) handleConfiguration(p Packet) error {
+	remoteAddr := c.conn.RemoteAddr().String()
 	switch p.ID {
 	case PacketIDClientInfo_C: // 0x00: Client Information
-		// We can parse and store this later.
-		fmt.Println("Received Client Information packet.")
-		return nil // It's okay to receive this, so we return nil
+		Log.Debug("Received Client Information packet", zap.String("remoteAddr", remoteAddr))
+		return nil
 
 	case PacketIDPluginMessage_C: // 0x01: Plugin Message / Cookie Response
-		// We can handle this later.
+		Log.Debug("Received Plugin Message/Cookie Response", zap.String("remoteAddr", remoteAddr))
 		return nil
 
 	case PacketIDAckFinishConfig_C: // 0x02: Acknowledge Finish Configuration (this is from the CLIENT)
-		fmt.Println("Client acknowledged finish configuration. Transitioning to Play state.")
+		Log.Info("Client acknowledged configuration, transitioning to Play state",
+			zap.String("remoteAddr", remoteAddr),
+			zap.String("username", c.player.Username),
+		)
 		c.state = StatePlay
 		if c.player == nil {
 			return fmt.Errorf("cannot transition to play, no player associated with connection")
@@ -115,7 +124,7 @@ func (c *Connection) handleConfiguration(p Packet) error {
 		return c.sendJoinGamePackets(c.player.EntityID)
 
 	case PacketIDKeepAlive_C: // 0x03: Keep-Alive (the one causing the crash)
-		fmt.Println("Received configuration Keep-Alive, responding...")
+		Log.Debug("Received and responding to configuration Keep-Alive", zap.String("remoteAddr", remoteAddr))
 		// The client sent a Keep-Alive, we must respond with the same payload.
 		// The response packet ID is also 0x03 in the configuration state.
 		keepAliveResponse := Packet{
@@ -125,8 +134,9 @@ func (c *Connection) handleConfiguration(p Packet) error {
 		return c.WritePacket(keepAliveResponse)
 
 	default:
-		// This is the line that was causing the disconnect
-		return fmt.Errorf("unhandled packet in configuration state: 0x%X", p.ID)
+		Log.Warn("Skipping unknown configuration packet", zap.Int32("id", p.ID))
+		Log.Debug("The packet in question: ", zap.Binary("data", p.Data))
+		return nil
 	}
 }
 
@@ -141,7 +151,7 @@ func (c *Connection) sendConfigurationPackets() error {
 	if err := c.WritePacket(finishConfigPacket); err != nil {
 		return err
 	}
-	fmt.Println("Server sent Finish Configuration. Waiting for client...")
+	Log.Debug("Server sent Finish Configuration, waiting for client ack", zap.String("remoteAddr", c.conn.RemoteAddr().String()))
 	return nil
 }
 
@@ -150,63 +160,69 @@ func (c *Connection) handlePlay(p Packet) error {
 }
 
 func (c *Connection) sendJoinGamePackets(entityID int32) error {
-	// Login (Play) Packet (0x29)
 	var loginPacket bytes.Buffer
-	loginPacket.Write(writeInt32(entityID))
-	loginPacket.Write(writeBool(false))
-	loginPacket.Write(writeByte(1))
-	loginPacket.Write(writeByte(byte(255)))
-	loginPacket.Write(writeVarInt(1))
-	loginPacket.Write(writeString("minecraft:overworld"))
 
+	loginPacket.Write(writeInt32(entityID))               // Player Entity ID
+	loginPacket.Write(writeBool(false))                   // Is Hardcore
+	loginPacket.Write(writeByte(1))                       // Gamemode: Creative
+	loginPacket.Write(writeByte(255))                     // Previous Gamemode (255 = none)
+	loginPacket.Write(writeVarInt(1))                     // World Count
+	loginPacket.Write(writeString("minecraft:overworld")) // World Name (must match dimension key)
+
+	// Dynamically build dimension codec
 	dimensionCodec, err := buildDimensionCodec()
 	if err != nil {
 		return fmt.Errorf("could not build dimension codec: %w", err)
 	}
 	loginPacket.Write(dimensionCodec)
-	loginPacket.Write(writeString("minecraft:overworld"))
-	loginPacket.Write(writeLong(0))
-	loginPacket.Write(writeVarInt(8))
-	loginPacket.Write(writeVarInt(10))
-	loginPacket.Write(writeVarInt(10))
-	loginPacket.Write(writeBool(false))
-	loginPacket.Write(writeBool(true))
-	loginPacket.Write(writeBool(false))
-	loginPacket.Write(writeBool(true))
-	loginPacket.Write(writeBool(false))
-	loginPacket.Write(writeVarInt(0))
+
+	loginPacket.Write(writeString("minecraft:overworld")) // Dimension type
+	loginPacket.Write(writeLong(0))                       // Hashed seed
+	loginPacket.Write(writeVarInt(8))                     // Max players
+	loginPacket.Write(writeVarInt(10))                    // View distance
+	loginPacket.Write(writeVarInt(10))                    // Simulation distance
+	loginPacket.Write(writeBool(false))                   // Reduced debug info
+	loginPacket.Write(writeBool(true))                    // Enable respawn screen
+	loginPacket.Write(writeBool(false))                   // Is debug
+	loginPacket.Write(writeBool(true))                    // Is flat
+	loginPacket.Write(writeBool(false))                   // Has death screen
+	loginPacket.Write(writeVarInt(0))                     // Portal cooldown (0 = instant)
 
 	if err := c.WritePacket(Packet{ID: 0x29, Data: loginPacket.Bytes()}); err != nil {
 		return err
 	}
 
+	// Set default spawn location (Position & Look)
 	var spawnPosPacket bytes.Buffer
 	spawnPosPacket.Write(writeBlockPos(0, 80, 0))
-	spawnPosPacket.Write(writeFloat(0.0))
+	spawnPosPacket.Write(writeFloat(0.0)) // angle
 	if err := c.WritePacket(Packet{ID: 0x51, Data: spawnPosPacket.Bytes()}); err != nil {
 		return err
 	}
 
+	// Set player abilities (Creative, Flying)
 	var abilitiesPacket bytes.Buffer
-	abilitiesPacket.Write(writeByte(0x0D))
-	abilitiesPacket.Write(writeFloat(0.05))
-	abilitiesPacket.Write(writeFloat(0.1))
+	abilitiesPacket.Write(writeByte(0x0D))  // Flags
+	abilitiesPacket.Write(writeFloat(0.05)) // Flying speed
+	abilitiesPacket.Write(writeFloat(0.1))  // FOV modifier
 	if err := c.WritePacket(Packet{ID: 0x36, Data: abilitiesPacket.Bytes()}); err != nil {
 		return err
 	}
 
+	// Sync player position
 	var posPacket bytes.Buffer
 	posPacket.Write(writeDouble(0))
 	posPacket.Write(writeDouble(80))
 	posPacket.Write(writeDouble(0))
-	posPacket.Write(writeFloat(0))
-	posPacket.Write(writeFloat(0))
-	posPacket.Write(writeByte(0))
-	posPacket.Write(writeVarInt(1))
+	posPacket.Write(writeFloat(0))  // Yaw
+	posPacket.Write(writeFloat(0))  // Pitch
+	posPacket.Write(writeByte(0))   // Flags (0 = absolute)
+	posPacket.Write(writeVarInt(1)) // Teleport ID
 	if err := c.WritePacket(Packet{ID: 0x3E, Data: posPacket.Bytes()}); err != nil {
 		return err
 	}
 
+	// Send empty chunks (optional but safe)
 	for x := -2; x <= 2; x++ {
 		for z := -2; z <= 2; z++ {
 			if err := c.WritePacket(generateEmptyChunkPacket(int32(x), int32(z))); err != nil {
@@ -215,6 +231,7 @@ func (c *Connection) sendJoinGamePackets(entityID int32) error {
 		}
 	}
 
+	// Set chunk center
 	var centerPacket bytes.Buffer
 	centerPacket.Write(writeVarInt(0))
 	centerPacket.Write(writeVarInt(0))
@@ -222,7 +239,10 @@ func (c *Connection) sendJoinGamePackets(entityID int32) error {
 		return err
 	}
 
-	fmt.Println("Player has successfully joined the world.")
+	Log.Info("Player has successfully joined the world",
+		zap.String("username", c.player.Username),
+		zap.Stringer("uuid", c.player.UUID),
+	)
 	return nil
 }
 
@@ -266,7 +286,7 @@ func (c *Connection) handlePing(p Packet) error {
 		return err // If we can't write, it's a real error
 	}
 
-	fmt.Printf("Responded to ping from %s. Closing connection.\n", c.conn.RemoteAddr())
+	Log.Debug("Responded to ping", zap.String("remoteAddr", c.conn.RemoteAddr().String()))
 
 	// Signal a clean shutdown.
 	return ErrPingComplete
