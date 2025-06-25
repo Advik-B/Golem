@@ -39,8 +39,14 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) handleNewConnection(conn net.Conn) {
-	Log.Info("Accepted new connection", zap.String("addr", conn.RemoteAddr().String()))
+	remoteAddr := conn.RemoteAddr().String()
+	Log.Info("Accepted new connection", zap.String("addr", remoteAddr))
+
 	c := NewConnection(s, conn)
 	c.Handle()
+
+	// This part executes after the connection's Handle() loop has finished.
+	// It ensures player data is cleaned up and the disconnection is logged.
 	s.PlayerManager.RemovePlayerByConn(c)
+	Log.Info("Connection closed", zap.String("addr", remoteAddr))
 }
