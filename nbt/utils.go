@@ -78,21 +78,26 @@ func CompareTags(a, b Tag, partial bool) bool {
 		if !ok || ta.Type != tb.Type {
 			return false
 		}
-		if !partial && len(ta.Value) != len(tb.Value) {
-			return false
-		}
+
 		if partial {
+			// FIX: Track matched elements to handle duplicates correctly.
+			if len(ta.Value) > len(tb.Value) {
+				return false
+			}
+			tbMatched := make([]bool, len(tb.Value))
 		outer:
 			for _, valA := range ta.Value {
-				for _, valB := range tb.Value {
-					if CompareTags(valA, valB, true) {
+				for j, valB := range tb.Value {
+					if !tbMatched[j] && CompareTags(valA, valB, true) {
+						tbMatched[j] = true
 						continue outer
 					}
 				}
-				return false // No match found for valA
+				return false // No unused match found for valA
 			}
 			return true
 		}
+
 		// Full comparison
 		if len(ta.Value) != len(tb.Value) {
 			return false
@@ -133,7 +138,7 @@ func StructureToSnbt(tag *CompoundTag) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return ToSNBT(packed), nil
+	return ToPrettySNBT(packed), nil
 }
 
 // SnbtToStructure converts an SNBT string back into a structure CompoundTag,
