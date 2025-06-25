@@ -324,54 +324,71 @@ func (p *parser) parseUnquotedStringOrNumber() (Tag, error) {
 	return &StringTag{Value: s}, nil
 }
 
-// Simplified number parser
+// parseNumber parses a number string, respecting an optional suffix and a contextual type.
 func (p *parser) parseNumber(contextualType TagID) (Tag, error) {
 	p.skipWhitespace()
-	start := p.cursor
-	for p.hasMore() {
-		r := p.peek()
-		if (r >= '0' && r <= '9') || r == '.' || r == 'e' || r == 'E' || r == '+' || r == '-' {
-			p.cursor++
-		} else {
-			break
-		}
+
+	// A simple regex to find a number-like pattern.
+	// This is more robust than the previous implementation.
+	numberRegex := regexp.MustCompile(`^[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][-+]?[0-9]+)?[bBsSlLdDfF]?`)
+	match := numberRegex.FindString(p.s[p.cursor:])
+	if match == "" {
+		return nil, p.error("expected a number")
 	}
 
-	suffix := p.peek()
-	if suffix == 'b' || suffix == 'B' || suffix == 's' || suffix == 'S' || suffix == 'l' || suffix == 'L' || suffix == 'f' || suffix == 'F' || suffix == 'd' || suffix == 'D' {
-		p.cursor++
-	} else {
-		suffix = 0
-	}
-	numStr := p.s[start:p.cursor]
+	p.cursor += len(match)
+	numStr := match
+	suffix := rune(0)
 
-	if suffix != 0 {
+	lastChar := rune(numStr[len(numStr)-1])
+	if !unicode.IsDigit(lastChar) && lastChar != '.' {
+		suffix = unicode.ToLower(lastChar)
 		numStr = numStr[:len(numStr)-1]
 	}
 
-	switch suffix {
-	case 'b', 'B':
-		v, err := strconv.ParseInt(numStr, 10, 8)
-		return &ByteTag{Value: byte(v)}, err
-	case 's', 'S':
-		v, err := strconv.ParseInt(numStr, 10, 16)
-		return &ShortTag{Value: int16(v)}, err
-	case 'l', 'L':
-		v, err := strconv.ParseInt(numStr, 10, 64)
-		return &LongTag{Value: v}, err
-	case 'f', 'F':
-		v, err := strconv.ParseFloat(numStr, 32)
-		return &FloatTag{Value: float32(v)}, err
-	case 'd', 'D':
+	// Explicit suffix always wins
+	if suffix != 0 {
+		switch suffix {
+		case 'b':
+			v, err := strconv.ParseInt(numStr, 10, 8)
+			return &ByteTag{Value: byte(v)}, err
+		case 's':
+			v, err := strconv.ParseInt(numStr, 10, 16)
+			return &ShortTag{Value: int16(v)}, err
+		case 'l':
+			v, err := strconv.ParseInt(numStr, 10, 64)
+			return &LongTag{Value: v}, err
+		case 'f':
+			v, err := strconv.ParseFloat(numStr, 32)
+			return &FloatTag{Value: float32(v)}, err
+		case 'd':
+			v, err := strconv.ParseFloat(numStr, 64)
+			return &DoubleTag{Value: v}, err
+		}
+	}
+
+	// No suffix, use context or infer
+	if strings.ContainsAny(numStr, ".eE") {
 		v, err := strconv.ParseFloat(numStr, 64)
+		if contextualType == TagFloat {
+			return &FloatTag{Value: float32(v)}, err
+		}
 		return &DoubleTag{Value: v}, err
 	}
 
-	// No suffix, infer type
-	if strings.ContainsAny(numStr, ".eE") {
-		v, err := strconv.ParseFloat(numStr, 64)
-		return &DoubleTag{Value: v}, err
+	// Integer without suffix, use context
+	switch contextualType {
+	case TagByte:
+		v, err := strconv.ParseInt(numStr, 10, 8)
+		return &ByteTag{Value: byte(v)}, err
+	case TagShort:
+		v, err := strconv.ParseInt(numStr, 10, 16)
+		return &ShortTag{Value: int16(v)}, err
+	case TagLong:
+		v, err := strconv.ParseInt(numStr, 10, 64)
+		return &LongTag{Value: v}, err
+	default: // Default to IntTag if no context or unknown
+		v, err := strconv.ParseInt(numStr, 10, 32)
+		return &IntTag{Value: int32(v)}, err
 	}
-	v, err := strconv.ParseInt(numStr, 10, 32)
-	return &IntTag{Value: int32(v)}, err
 }
