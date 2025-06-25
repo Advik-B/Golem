@@ -330,7 +330,6 @@ func (p *parser) parseNumber(contextualType TagID) (Tag, error) {
 
 	// A simple regex to find a number-like pattern.
 	// This is more robust than the previous implementation.
-	numberRegex := regexp.MustCompile(`^[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][-+]?[0-9]+)?[bBsSlLdDfF]?`)
 	match := numberRegex.FindString(p.s[p.cursor:])
 	if match == "" {
 		return nil, p.error("expected a number")
