@@ -7,23 +7,25 @@ import (
 	"strings"
 )
 
-/*
-	This file implements a pretty-printer to convert Tag objects back into a readable SNBT string, similar to SnbtPrinterTagVisitor.java.
-*/
-
 // Printer converts an NBT Tag to its SNBT string representation.
 type Printer struct {
-	indentation string
+	pretty      bool   // If true, adds indentation and newlines.
+	indentation string // The string to use for one level of indentation.
 	depth       int
 	builder     strings.Builder
 }
 
-// NewPrinter creates a new SNBT printer.
-func NewPrinter(indent string) *Printer {
-	return &Printer{indentation: indent}
+// NewPrettyPrinter creates a new SNBT printer for formatted, human-readable output.
+func NewPrettyPrinter(indent string) *Printer {
+	return &Printer{pretty: true, indentation: indent}
 }
 
-// Print converts the tag to an SNBT string.
+// NewCompactPrinter creates a new SNBT printer for compact, single-line output.
+func NewCompactPrinter() *Printer {
+	return &Printer{pretty: false, indentation: ""}
+}
+
+// Print converts the tag to an SNBT string using the printer's mode.
 func (p *Printer) Print(tag Tag) string {
 	p.builder.Reset()
 	p.depth = 0
@@ -33,8 +35,8 @@ func (p *Printer) Print(tag Tag) string {
 
 func (p *Printer) writeTag(tag Tag) {
 	switch v := tag.(type) {
+	// ... (cases for primitive tags are unchanged) ...
 	case *EndTag:
-		// Do nothing
 	case *ByteTag:
 		p.builder.WriteString(fmt.Sprintf("%db", v.Value))
 	case *ShortTag:
@@ -90,22 +92,28 @@ func (p *Printer) writeList(t *ListTag) {
 	}
 
 	p.builder.WriteString("[")
-	p.depth++
+	if p.pretty {
+		p.depth++
+	}
+
 	for i, tag := range t.Value {
 		if i > 0 {
 			p.builder.WriteString(",")
-			if len(p.indentation) > 0 {
+			if !p.pretty {
 				p.builder.WriteString(" ")
 			}
 		}
-		if len(p.indentation) > 0 {
+
+		if p.pretty {
 			p.builder.WriteString("\n")
 			p.builder.WriteString(strings.Repeat(p.indentation, p.depth))
 		}
+
 		p.writeTag(tag)
 	}
-	p.depth--
-	if len(p.indentation) > 0 {
+
+	if p.pretty {
+		p.depth--
 		p.builder.WriteString("\n")
 		p.builder.WriteString(strings.Repeat(p.indentation, p.depth))
 	}
@@ -128,7 +136,9 @@ func (p *Printer) writeCompound(t *CompoundTag) {
 	}
 
 	p.builder.WriteString("{")
-	p.depth++
+	if p.pretty {
+		p.depth++
+	}
 
 	keys := make([]string, 0, len(t.Value))
 	for k := range t.Value {
@@ -140,7 +150,8 @@ func (p *Printer) writeCompound(t *CompoundTag) {
 		if i > 0 {
 			p.builder.WriteString(",")
 		}
-		if len(p.indentation) > 0 {
+
+		if p.pretty {
 			p.builder.WriteString("\n")
 			p.builder.WriteString(strings.Repeat(p.indentation, p.depth))
 		} else if i > 0 {
@@ -152,15 +163,20 @@ func (p *Printer) writeCompound(t *CompoundTag) {
 		p.writeTag(t.Value[key])
 	}
 
-	p.depth--
-	if len(p.indentation) > 0 {
+	if p.pretty {
+		p.depth--
 		p.builder.WriteString("\n")
 		p.builder.WriteString(strings.Repeat(p.indentation, p.depth))
 	}
 	p.builder.WriteString("}")
 }
 
-// ToSNBT converts a tag to its SNBT representation with default pretty-printing.
-func ToSNBT(tag Tag) string {
-	return NewPrinter("  ").Print(tag)
+// ToPrettySNBT converts a tag to its pretty-printed SNBT representation.
+func ToPrettySNBT(tag Tag) string {
+	return NewPrettyPrinter("  ").Print(tag)
+}
+
+// ToCompactSNBT converts a tag to its compact SNBT representation.
+func ToCompactSNBT(tag Tag) string {
+	return NewCompactPrinter().Print(tag)
 }
