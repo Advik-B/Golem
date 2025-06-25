@@ -58,8 +58,8 @@ func TestBinaryIO(t *testing.T) {
 		// Use assert.True with verbose logging on failure
 		if !assert.True(t, nbt.CompareTags(originalTag, readTag.Tag, false), "Standard binary read tag should match original") {
 			t.Logf("--- VERBOSE FAILURE INFO ---")
-			t.Logf("Original Tag SNBT:\n%s\n", nbt.ToSNBT(originalTag))
-			t.Logf("Tag Read from Binary SNBT:\n%s\n", nbt.ToSNBT(readTag.Tag))
+			t.Logf("Original Tag SNBT:\n%s\n", nbt.ToPrettySNBT(originalTag))
+			t.Logf("Tag Read from Binary SNBT:\n%s\n", nbt.ToPrettySNBT(readTag.Tag))
 			t.Logf("--- END VERBOSE INFO ---")
 		}
 	})
@@ -74,8 +74,8 @@ func TestBinaryIO(t *testing.T) {
 
 		if !assert.True(t, nbt.CompareTags(originalTag, readTag.Tag, false), "Compressed binary read tag should match original") {
 			t.Logf("--- VERBOSE FAILURE INFO ---")
-			t.Logf("Original Tag SNBT:\n%s\n", nbt.ToSNBT(originalTag))
-			t.Logf("Tag Read from Compressed Binary SNBT:\n%s\n", nbt.ToSNBT(readTag.Tag))
+			t.Logf("Original Tag SNBT:\n%s\n", nbt.ToPrettySNBT(originalTag))
+			t.Logf("Tag Read from Compressed Binary SNBT:\n%s\n", nbt.ToPrettySNBT(readTag.Tag))
 			t.Logf("--- END VERBOSE INFO ---")
 		}
 	})
@@ -144,7 +144,7 @@ func TestSNBTParsing(t *testing.T) {
 func TestSNBTPrintingAndRoundTrip(t *testing.T) {
 	originalTag := createTestTag()
 
-	snbtOut := nbt.ToSNBT(originalTag)
+	snbtOut := nbt.ToPrettySNBT(originalTag)
 	require.NotEmpty(t, snbtOut, "Generated SNBT should not be empty")
 	t.Logf("Generated SNBT for Round-Trip Test:\n%s", snbtOut)
 
@@ -153,8 +153,8 @@ func TestSNBTPrintingAndRoundTrip(t *testing.T) {
 
 	if !assert.True(t, nbt.CompareTags(originalTag, parsedBack, false), "SNBT round-trip should produce an identical tag") {
 		t.Logf("--- VERBOSE FAILURE INFO ---")
-		t.Logf("Original Tag SNBT:\n%s\n", nbt.ToSNBT(originalTag))
-		t.Logf("Parsed-Back Tag SNBT:\n%s\n", nbt.ToSNBT(parsedBack))
+		t.Logf("Original Tag SNBT:\n%s\n", nbt.ToPrettySNBT(originalTag))
+		t.Logf("Parsed-Back Tag SNBT:\n%s\n", nbt.ToPrettySNBT(parsedBack))
 		t.Logf("--- END VERBOSE INFO ---")
 	}
 }
