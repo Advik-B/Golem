@@ -1,7 +1,6 @@
 package nbt
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -308,7 +307,15 @@ func (t *CompoundTag) String() string {
 	return sb.String()
 }
 func (t *CompoundTag) write(w io.Writer) error {
-	for name, tag := range t.Value {
+	// FIX: Sort keys for deterministic output.
+	keys := make([]string, 0, len(t.Value))
+	for name := range t.Value {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+
+	for _, name := range keys {
+		tag := t.Value[name]
 		if err := binary.Write(w, binary.BigEndian, tag.ID()); err != nil {
 			return err
 		}
@@ -321,6 +328,7 @@ func (t *CompoundTag) write(w io.Writer) error {
 	}
 	return binary.Write(w, binary.BigEndian, TagEnd)
 }
+
 func (t *CompoundTag) read(r io.Reader) error {
 	t.Value = make(map[string]Tag)
 	for {
@@ -417,48 +425,6 @@ func writeUTF(w io.Writer, s string) error {
 	}
 	_, err := w.Write(encoded)
 	return err
-}
-
-// MUTF8 encoding/decoding, simplified for this context.
-// A full implementation handles surrogate pairs correctly.
-func decodeMUTF8(b []byte) string {
-	var buf bytes.Buffer
-	for i := 0; i < len(b); {
-		c := b[i]
-		i++
-		switch c >> 4 {
-		case 0, 1, 2, 3, 4, 5, 6, 7:
-			buf.WriteByte(c)
-		case 12, 13:
-			c2 := b[i]
-			i++
-			buf.WriteRune(rune(c&0x1F)<<6 | rune(c2&0x3F))
-		case 14:
-			c2 := b[i]
-			i++
-			c3 := b[i]
-			i++
-			buf.WriteRune(rune(c&0x0F)<<12 | rune(c2&0x3F)<<6 | rune(c3&0x3F))
-		}
-	}
-	return buf.String()
-}
-
-func encodeMUTF8(s string) []byte {
-	var buf bytes.Buffer
-	for _, r := range s {
-		if r >= 0x0001 && r <= 0x007F {
-			buf.WriteByte(byte(r))
-		} else if r > 0x07FF {
-			buf.WriteByte(byte(0xE0 | (r >> 12 & 0x0F)))
-			buf.WriteByte(byte(0x80 | (r >> 6 & 0x3F)))
-			buf.WriteByte(byte(0x80 | (r & 0x3F)))
-		} else { // also handles r == 0
-			buf.WriteByte(byte(0xC0 | (r >> 6 & 0x1F)))
-			buf.WriteByte(byte(0x80 | (r & 0x3F)))
-		}
-	}
-	return buf.Bytes()
 }
 
 // --- String escaping for SNBT ---
