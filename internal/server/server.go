@@ -40,20 +40,17 @@ func (s *Server) Start() error {
 	}
 }
 
-// handleNewConnection now acts as a pre-login handler.
 func (s *Server) handleNewConnection(conn net.Conn) {
 	fmt.Printf("Accepted new connection from %s\n", conn.RemoteAddr())
 
-	// Create a temporary connection object just for the handshake and login process.
-	tempConn := NewConnection(s, conn)
-	defer func() {
-		// If the login process doesn't complete, this defer will close the raw connection.
-		if tempConn.state != StatePlay {
-			tempConn.Close()
-		}
-	}()
+	// Create ONE connection object to manage the client for its entire lifecycle.
+	c := NewConnection(s, conn)
 
-	// Handle only the handshake and login states.
-	// The Play state will be handled by the PlayerManager's persistent connection.
-	tempConn.HandleLogin()
+	// The Handle method will manage the connection from handshake to disconnect.
+	// When it returns, the connection is over.
+	c.Handle()
+
+	// Clean up the player after the connection is closed.
+	// This ensures the player is removed from the PlayerManager.
+	s.PlayerManager.RemovePlayerByConn(c)
 }
