@@ -372,7 +372,7 @@ func readVarInt(r io.Reader) (int32, error) {
 		}
 		read = bytes[0]
 		value := int32(read & 0b01111111)
-		result |= (value << (7 * numRead))
+		result |= value << (7 * numRead)
 		numRead++
 		if numRead > 5 {
 			return 0, io.ErrUnexpectedEOF
