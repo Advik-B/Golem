@@ -4,17 +4,32 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Tnze/go-mc/nbt"
 	"github.com/google/uuid"
 	"io"
-	"time"
 )
 
 const (
 	ProtocolVersion = 767 // 1.21.5
 	ServerVersion   = "Golem 1.21.5"
+
+	// Serverbound (Client to Server)
+	PacketIDClientInfo_C      = 0x00
+	PacketIDPluginMessage_C   = 0x01 // Or Cookie Response
+	PacketIDAckFinishConfig_C = 0x02
+	PacketIDKeepAlive_C       = 0x03
+
+	// Clientbound (Server to Client)
+	PacketIDPluginMessage_S = 0x00
+	PacketIDDisconnect_S    = 0x01
+	PacketIDFinishConfig_S  = 0x02
+	PacketIDKeepAlive_S     = 0x03
+	PacketIDRegistryData_S  = 0x05
 )
+
+var ErrPingComplete = errors.New("ping sequence complete")
 
 func (c *Connection) handleHandshake(p Packet) error {
 	if p.ID != 0x00 {
@@ -60,9 +75,8 @@ func (c *Connection) handleLogin(p Packet) error {
 
 	fmt.Printf("Player %s with UUID %s is attempting to log in...\n", playerName, playerUUID)
 
-	// Add the player to the manager, which creates the persistent connection object for them.
-	// We use the temporary connection `c` to send the Login Success packet, then we are done with it.
-	player := c.server.PlayerManager.AddPlayer(c.conn, playerName, playerUUID)
+	// Add the player to the manager and associate it with THIS connection.
+	c.server.PlayerManager.AddPlayer(c, playerName, playerUUID)
 
 	// Send Login Success (0x02)
 	packet := Packet{ID: 0x02}
@@ -76,30 +90,44 @@ func (c *Connection) handleLogin(p Packet) error {
 		return fmt.Errorf("failed to send login success: %w", err)
 	}
 
-	// The player's persistent connection now takes over.
-	// It starts in the CONFIGURATION state.
-	player.Conn.state = StateConfiguration
-	return player.Conn.sendConfigurationPackets()
+	// Transition the state of THIS connection.
+	c.state = StateConfiguration
+	return c.sendConfigurationPackets()
 }
 
-// handleConfiguration waits for the client to finish its configuration.
 func (c *Connection) handleConfiguration(p Packet) error {
 	switch p.ID {
-	case 0x00: // Client Information
+	case PacketIDClientInfo_C: // 0x00: Client Information
 		// We can parse and store this later.
-		break
-	case 0x01: // Plugin Message
+		fmt.Println("Received Client Information packet.")
+		return nil // It's okay to receive this, so we return nil
+
+	case PacketIDPluginMessage_C: // 0x01: Plugin Message / Cookie Response
 		// We can handle this later.
-		break
-	case 0x02: // Finish Configuration (Clientbound)
-		fmt.Println("Client finished configuration. Transitioning to Play state.")
+		return nil
+
+	case PacketIDAckFinishConfig_C: // 0x02: Acknowledge Finish Configuration (this is from the CLIENT)
+		fmt.Println("Client acknowledged finish configuration. Transitioning to Play state.")
 		c.state = StatePlay
-		entityID := c.server.PlayerManager.GetPlayerByConn(c).EntityID
-		return c.sendJoinGamePackets(entityID)
+		if c.player == nil {
+			return fmt.Errorf("cannot transition to play, no player associated with connection")
+		}
+		return c.sendJoinGamePackets(c.player.EntityID)
+
+	case PacketIDKeepAlive_C: // 0x03: Keep-Alive (the one causing the crash)
+		fmt.Println("Received configuration Keep-Alive, responding...")
+		// The client sent a Keep-Alive, we must respond with the same payload.
+		// The response packet ID is also 0x03 in the configuration state.
+		keepAliveResponse := Packet{
+			ID:   PacketIDKeepAlive_S, // 0x03
+			Data: p.Data,
+		}
+		return c.WritePacket(keepAliveResponse)
+
 	default:
+		// This is the line that was causing the disconnect
 		return fmt.Errorf("unhandled packet in configuration state: 0x%X", p.ID)
 	}
-	return nil
 }
 
 // sendConfigurationPackets sends the server's initial configuration packets.
@@ -224,18 +252,24 @@ func (c *Connection) sendStatusResponse() error {
 	return c.WritePacket(packet)
 }
 
+// in internal/server/protocol.go
 func (c *Connection) handlePing(p Packet) error {
 	if len(p.Data) != 8 {
 		return fmt.Errorf("invalid ping packet payload size")
 	}
 	responsePacket := Packet{
-		ID:   0x01,
+		ID:   0x01, // Pong
 		Data: p.Data,
 	}
 	err := c.WritePacket(responsePacket)
-	fmt.Printf("Responded to ping from %s\n", c.conn.RemoteAddr())
-	c.conn.SetDeadline(time.Now())
-	return err
+	if err != nil {
+		return err // If we can't write, it's a real error
+	}
+
+	fmt.Printf("Responded to ping from %s. Closing connection.\n", c.conn.RemoteAddr())
+
+	// Signal a clean shutdown.
+	return ErrPingComplete
 }
 
 func generateEmptyChunkPacket(x, z int32) Packet {
