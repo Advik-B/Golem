@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"github.com/google/uuid"
-	"net"
 	"sync"
 )
 
@@ -27,22 +26,24 @@ func NewPlayerManager(s *Server) *PlayerManager {
 	}
 }
 
-func (pm *PlayerManager) AddPlayer(conn net.Conn, username string, playerUUID uuid.UUID) *Player {
+func (pm *PlayerManager) AddPlayer(c *Connection, username string, playerUUID uuid.UUID) *Player {
 	pm.Lock()
 	defer pm.Unlock()
 
-	entityID := int32(len(pm.players) + 1)
+	entityID := int32(len(pm.players) + 1) // Simple entity ID for now
 
 	player := &Player{
 		EntityID: entityID,
 		UUID:     playerUUID,
 		Username: username,
-		Conn:     NewConnection(pm.server, conn),
+		Conn:     c, // Use the existing connection
 	}
 
+	// Associate the player with the connection
+	c.player = player
 	pm.players[playerUUID] = player
 
-	go pm.handlePlayerConnection(player)
+	fmt.Printf("Player %s [%s] added to PlayerManager.\n", username, playerUUID)
 
 	return player
 }
@@ -53,16 +54,20 @@ func (pm *PlayerManager) handlePlayerConnection(player *Player) {
 }
 
 func (pm *PlayerManager) RemovePlayer(player *Player) {
+	if player == nil {
+		return
+	}
 	pm.Lock()
 	defer pm.Unlock()
 
-	delete(pm.players, player.UUID)
-	player.Conn.Close()
-	fmt.Printf("Player %s disconnected.\n", player.Username)
+	if _, ok := pm.players[player.UUID]; ok {
+		delete(pm.players, player.UUID)
+		player.Conn.Close()
+		fmt.Printf("Player %s disconnected.\n", player.Username)
+	}
 }
 
 // GetPlayerByConn finds a player associated with a specific connection object.
-// THIS IS THE NEWLY ADDED FUNCTION.
 func (pm *PlayerManager) GetPlayerByConn(c *Connection) *Player {
 	pm.RLock()
 	defer pm.RUnlock()
@@ -72,4 +77,13 @@ func (pm *PlayerManager) GetPlayerByConn(c *Connection) *Player {
 		}
 	}
 	return nil
+}
+
+func (pm *PlayerManager) RemovePlayerByConn(c *Connection) {
+	// The connection might have closed before a player was ever created.
+	if c.player != nil {
+		pm.RemovePlayer(c.player)
+	} else {
+		fmt.Printf("Connection from %s closed before login.\n", c.conn.RemoteAddr())
+	}
 }
