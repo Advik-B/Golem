@@ -1,15 +1,17 @@
 package main
 
 import (
-	"fmt"
-	"github.com/Advik-B/Golem/internal/server"
+    "github.com/Advik-B/Golem/internal/server"
+    "go.uber.org/zap"
 )
 
 func main() {
-	srv := server.NewServer("0.0.0.0:25565")
-	fmt.Println("Starting Golem server on :25565...")
-	err := srv.Start()
-	if err != nil {
-		fmt.Printf("Failed to start server: %v\n", err)
-	}
+    server.InitLogger(true)
+    defer server.Log.Sync()
+
+    server.Log.Info("Starting Golem server on :25565...")
+    srv := server.NewServer("0.0.0.0:25565")
+    if err := srv.Start(); err != nil {
+        server.Log.Fatal("Failed to start server", zap.Error(err))
+    }
 }
