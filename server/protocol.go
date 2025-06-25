@@ -13,7 +13,7 @@ import (
 
 const (
 	ProtocolVersion = 767 // 1.21.5
-	ServerVersion   = "Golem 1.21.5"
+	Version         = "Golem 1.21.5"
 
 	// Serverbound (Client to Server)
 	PacketIDClientInfo_C      = 0x00
@@ -229,7 +229,7 @@ func (c *Connection) sendJoinGamePackets(entityID int32) error {
 func (c *Connection) sendStatusResponse() error {
 	status := map[string]interface{}{
 		"version": map[string]interface{}{
-			"name":     ServerVersion,
+			"name":     Version,
 			"protocol": ProtocolVersion,
 		},
 		"players": map[string]interface{}{
@@ -365,12 +365,12 @@ func readVarInt(r io.Reader) (int32, error) {
 	var result int32
 	var read byte
 	for {
-		bytes := make([]byte, 1)
-		_, err := r.Read(bytes)
+		b := make([]byte, 1)
+		_, err := r.Read(b)
 		if err != nil {
 			return 0, err
 		}
-		read = bytes[0]
+		read = b[0]
 		value := int32(read & 0b01111111)
 		result |= value << (7 * numRead)
 		numRead++
@@ -394,7 +394,7 @@ func readVarIntFromBytes(b []byte) (int32, int) {
 		}
 		read = b[numRead]
 		value := int32(read & 0b01111111)
-		result |= (value << (7 * numRead))
+		result |= value << (7 * numRead)
 		numRead++
 		if numRead > 5 {
 			return 0, 0
