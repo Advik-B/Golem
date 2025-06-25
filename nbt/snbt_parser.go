@@ -8,6 +8,9 @@ import (
 	"unicode"
 )
 
+// Move the regex compilation to the package level.
+var numberRegex = regexp.MustCompile(`^[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][-+]?[0-9]+)?[bBsSlLdDfF]?`)
+
 // parser holds the state of the SNBT parsing.
 type parser struct {
 	s      string
@@ -106,6 +109,9 @@ func (p *parser) parseCompound() (*CompoundTag, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		p.skipWhitespace()
+
 		if err := p.expect(':'); err != nil {
 			return nil, err
 		}
@@ -144,7 +150,7 @@ func (p *parser) parseListOrArray() (Tag, error) {
 	p.skipWhitespace()
 
 	// Check for special array format like [B;...]
-	if p.cursor+2 < len(p.s) && p.s[p.cursor+1] == ';' {
+	if p.cursor+1 < len(p.s) && p.s[p.cursor+1] == ';' {
 		switch p.s[p.cursor] {
 		case 'B':
 			return p.parseByteArray()
