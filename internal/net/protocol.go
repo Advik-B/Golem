@@ -1,4 +1,3 @@
-// internal/net/protocol.go
 package net
 
 import (
@@ -8,7 +7,6 @@ import (
 	"math"
 )
 
-// Reader is a helper for reading Minecraft protocol data.
 type Reader struct {
 	r *bufio.Reader
 }
@@ -38,8 +36,8 @@ func (r *Reader) ReadVarInt() (int, error) {
 			break
 		}
 		shift += 7
-		if shift >= 32 {
-			return 0, io.ErrUnexpectedEOF // Or a more specific "VarInt too long" error
+		if shift >= 35 {
+			return 0, io.ErrUnexpectedEOF
 		}
 	}
 	return num, nil
@@ -63,7 +61,6 @@ func (r *Reader) ReadLong() (int64, error) {
 	return val, err
 }
 
-// Writer is a helper for writing Minecraft protocol data.
 type Writer struct {
 	w io.Writer
 }
@@ -76,7 +73,6 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 	return w.w.Write(p)
 }
 
-// WritePacket sends a packet with its ID and payload, handling length prefixing.
 func (w *Writer) WritePacket(id int, payload ...[]byte) {
 	p := WriteVarInt(id)
 	for _, part := range payload {
@@ -86,8 +82,6 @@ func (w *Writer) WritePacket(id int, payload ...[]byte) {
 	final = append(final, p...)
 	w.w.Write(final)
 }
-
-// --- Exported helpers for writing specific types ---
 
 func WriteVarInt(n int) []byte {
 	var out []byte

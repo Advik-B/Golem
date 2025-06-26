@@ -40,16 +40,14 @@ const dimensionCodecSNBT = `
             "id": 0,
             "element": {
                "precipitation": "rain",
-               "depth": 0.125,
-               "temperature": 0.8,
                "downfall": 0.4,
-               "category": "plains",
                "effects": {
                   "sky_color": 7907327,
                   "fog_color": 12638463,
                   "water_color": 4159204,
                   "water_fog_color": 329011
-               }
+               },
+               "temperature": 0.8
             }
          }
       ]
