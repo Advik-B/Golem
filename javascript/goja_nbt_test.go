@@ -1,7 +1,6 @@
-package jsbindings
+package javascript
 
 import (
-	"github.com/Advik-B/Golem/javascript"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/require"
 	"sync"
@@ -108,7 +107,7 @@ func TestGojaNBTBindings(t *testing.T) {
 			})
 
 			// Inject the NBT module
-			nbtModule := javascript.NewNbtModule(vm)
+			nbtModule := NewNbtModule(vm)
 			vm.Set("nbt", nbtModule)
 
 			// Run the test script
