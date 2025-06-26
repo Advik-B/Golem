@@ -20,16 +20,17 @@ type parser struct {
 // ParseSNBT converts an SNBT string into a Tag. It expects a CompoundTag.
 func ParseSNBT(data string) (*CompoundTag, error) {
 	p := &parser{s: data}
-	tag, err := p.parseValue()
+	val, err := p.parseValue()
 	if err != nil {
 		return nil, err
 	}
 
+	p.skipWhitespace()
 	if p.hasMore() {
-		return nil, p.error("trailing data found")
+		return nil, p.error("trailing data found after top-level tag")
 	}
 
-	if compound, ok := tag.(*CompoundTag); ok {
+	if compound, ok := val.(*CompoundTag); ok {
 		return compound, nil
 	}
 	return nil, p.error("expected compound tag at top level")
@@ -88,7 +89,8 @@ func (p *parser) parseValue() (Tag, error) {
 		}
 		return &StringTag{Value: s}, nil
 	default:
-		return p.parseUnquotedStringOrNumber()
+		// An unquoted value must be a number or a boolean constant.
+		return p.parseNumberOrBoolean()
 	}
 }
 
@@ -99,18 +101,16 @@ func (p *parser) parseCompound() (*CompoundTag, error) {
 	tag := NewCompoundTag()
 	p.skipWhitespace()
 
-	if p.peek() == '}' {
+	if p.peek() == '}' { // Handle empty compound
 		p.cursor++
 		return tag, nil
 	}
 
-	for p.hasMore() {
+	for {
 		key, err := p.parseKey()
 		if err != nil {
 			return nil, err
 		}
-
-		p.skipWhitespace()
 
 		if err := p.expect(':'); err != nil {
 			return nil, err
@@ -122,11 +122,15 @@ func (p *parser) parseCompound() (*CompoundTag, error) {
 		tag.Put(key, val)
 
 		p.skipWhitespace()
-		if p.peek() == ',' {
-			p.cursor++
-			continue
+		if p.peek() != ',' {
+			break // No comma, must be the end of the compound
 		}
-		break
+		p.cursor++ // Consume the comma
+
+		p.skipWhitespace()
+		if p.peek() == '}' {
+			return nil, p.error("trailing comma in compound tag")
+		}
 	}
 
 	if err := p.expect('}'); err != nil {
@@ -172,7 +176,7 @@ func (p *parser) parseList() (*ListTag, error) {
 		return list, nil
 	}
 
-	for p.hasMore() {
+	for {
 		val, err := p.parseValue()
 		if err != nil {
 			return nil, err
@@ -181,11 +185,15 @@ func (p *parser) parseList() (*ListTag, error) {
 			return nil, p.error(err.Error())
 		}
 		p.skipWhitespace()
-		if p.peek() == ',' {
-			p.cursor++
-			continue
+		if p.peek() != ',' {
+			break
 		}
-		break
+		p.cursor++
+
+		p.skipWhitespace()
+		if p.peek() == ']' {
+			return nil, p.error("trailing comma in list tag")
+		}
 	}
 
 	if err := p.expect(']'); err != nil {
@@ -197,21 +205,29 @@ func (p *parser) parseList() (*ListTag, error) {
 func (p *parser) parseByteArray() (*ByteArrayTag, error) {
 	p.cursor += 2 // Skip 'B;'
 	var values []int8
+	p.skipWhitespace()
+	if p.peek() == ']' {
+		p.cursor++
+		return &ByteArrayTag{Value: values}, nil
+	}
 	for {
-		p.skipWhitespace()
-		if p.peek() == ']' {
-			p.cursor++
-			break
-		}
 		v, err := p.parseNumber(TagByte)
 		if err != nil {
 			return nil, err
 		}
 		values = append(values, v.(*ByteTag).Value)
 		p.skipWhitespace()
-		if p.peek() == ',' {
-			p.cursor++
+		if p.peek() != ',' {
+			break
 		}
+		p.cursor++
+		p.skipWhitespace()
+		if p.peek() == ']' {
+			return nil, p.error("trailing comma in byte array tag")
+		}
+	}
+	if err := p.expect(']'); err != nil {
+		return nil, err
 	}
 	return &ByteArrayTag{Value: values}, nil
 }
@@ -219,21 +235,29 @@ func (p *parser) parseByteArray() (*ByteArrayTag, error) {
 func (p *parser) parseIntArray() (*IntArrayTag, error) {
 	p.cursor += 2 // Skip 'I;'
 	var values []int32
+	p.skipWhitespace()
+	if p.peek() == ']' {
+		p.cursor++
+		return &IntArrayTag{Value: values}, nil
+	}
 	for {
-		p.skipWhitespace()
-		if p.peek() == ']' {
-			p.cursor++
-			break
-		}
 		v, err := p.parseNumber(TagInt)
 		if err != nil {
 			return nil, err
 		}
 		values = append(values, v.(*IntTag).Value)
 		p.skipWhitespace()
-		if p.peek() == ',' {
-			p.cursor++
+		if p.peek() != ',' {
+			break
 		}
+		p.cursor++
+		p.skipWhitespace()
+		if p.peek() == ']' {
+			return nil, p.error("trailing comma in int array tag")
+		}
+	}
+	if err := p.expect(']'); err != nil {
+		return nil, err
 	}
 	return &IntArrayTag{Value: values}, nil
 }
@@ -241,21 +265,29 @@ func (p *parser) parseIntArray() (*IntArrayTag, error) {
 func (p *parser) parseLongArray() (*LongArrayTag, error) {
 	p.cursor += 2 // Skip 'L;'
 	var values []int64
+	p.skipWhitespace()
+	if p.peek() == ']' {
+		p.cursor++
+		return &LongArrayTag{Value: values}, nil
+	}
 	for {
-		p.skipWhitespace()
-		if p.peek() == ']' {
-			p.cursor++
-			break
-		}
 		v, err := p.parseNumber(TagLong)
 		if err != nil {
 			return nil, err
 		}
 		values = append(values, v.(*LongTag).Value)
 		p.skipWhitespace()
-		if p.peek() == ',' {
-			p.cursor++
+		if p.peek() != ',' {
+			break
 		}
+		p.cursor++
+		p.skipWhitespace()
+		if p.peek() == ']' {
+			return nil, p.error("trailing comma in long array tag")
+		}
+	}
+	if err := p.expect(']'); err != nil {
+		return nil, err
 	}
 	return &LongArrayTag{Value: values}, nil
 }
@@ -297,37 +329,27 @@ func (p *parser) parseQuotedString() (string, error) {
 	return "", p.error("unterminated string")
 }
 
-var numberPattern = regexp.MustCompile(`^[-+]?(?:[0-9]+[eE][-+]?[0-9]+|[0-9]*\.[0-9]+(?:[eE][-+]?[0-9]+)?|[0-9]+\.(?:[eE][-+]?[0-9]+)?|[0-9]+)[dDfF]?`)
-var integerPattern = regexp.MustCompile(`^[-+]?[0-9]+[bBsSlL]?`)
+func (p *parser) parseNumberOrBoolean() (Tag, error) {
+	p.skipWhitespace()
+	remaining := p.s[p.cursor:]
 
-func (p *parser) parseUnquotedStringOrNumber() (Tag, error) {
-	s, err := p.parseUnquotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	if strings.EqualFold(s, "true") {
+	// Check for boolean constants before attempting to parse a number
+	if len(remaining) >= 4 && remaining[:4] == "true" {
+		p.cursor += 4
 		return &ByteTag{Value: 1}, nil
 	}
-	if strings.EqualFold(s, "false") {
+	if len(remaining) >= 5 && remaining[:5] == "false" {
+		p.cursor += 5
 		return &ByteTag{Value: 0}, nil
 	}
 
-	// Try parsing as number
-	originalCursor := p.cursor
-	p.cursor -= len(s)                           // rewind to start of string
-	defer func() { p.cursor = originalCursor }() // restore cursor if number parsing fails
-
-	if num, err := p.parseNumber(0); err == nil {
-		// Check if the whole string was consumed as a number
-		if originalCursor == p.cursor {
-			return num, nil
-		}
+	// Not a boolean, so it must be a number
+	tag, err := p.parseNumber(0)
+	if err != nil {
+		// If it's not a boolean and not a number, it's an invalid value.
+		return nil, p.error("expected value, found invalid unquoted string")
 	}
-
-	// If not a known constant or a valid number, it's an unquoted string
-	p.cursor = originalCursor // restore cursor
-	return &StringTag{Value: s}, nil
+	return tag, nil
 }
 
 // parseNumber parses a number string, respecting an optional suffix and a contextual type.
