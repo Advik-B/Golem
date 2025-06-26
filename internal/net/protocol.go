@@ -1,9 +1,11 @@
+// internal/net/protocol.go
 package net
 
 import (
 	"bufio"
 	"encoding/binary"
 	"io"
+	"math"
 )
 
 // Reader is a helper for reading Minecraft protocol data.
@@ -19,6 +21,10 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 	return io.ReadFull(r.r, p)
 }
 
+func (r *Reader) ReadByte() (byte, error) {
+	return r.r.ReadByte()
+}
+
 func (r *Reader) ReadVarInt() (int, error) {
 	var num int
 	var shift uint
@@ -32,6 +38,9 @@ func (r *Reader) ReadVarInt() (int, error) {
 			break
 		}
 		shift += 7
+		if shift >= 32 {
+			return 0, io.ErrUnexpectedEOF // Or a more specific "VarInt too long" error
+		}
 	}
 	return num, nil
 }
@@ -46,6 +55,12 @@ func (r *Reader) ReadString() (string, error) {
 		return "", err
 	}
 	return string(buf), nil
+}
+
+func (r *Reader) ReadLong() (int64, error) {
+	var val int64
+	err := binary.Read(r.r, binary.BigEndian, &val)
+	return val, err
 }
 
 // Writer is a helper for writing Minecraft protocol data.
@@ -63,18 +78,18 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 
 // WritePacket sends a packet with its ID and payload, handling length prefixing.
 func (w *Writer) WritePacket(id int, payload ...[]byte) {
-	p := writeVarInt(id)
+	p := WriteVarInt(id)
 	for _, part := range payload {
 		p = append(p, part...)
 	}
-	final := writeVarInt(len(p))
+	final := WriteVarInt(len(p))
 	final = append(final, p...)
 	w.w.Write(final)
 }
 
-// --- Internal helpers for writing specific types ---
+// --- Exported helpers for writing specific types ---
 
-func writeVarInt(n int) []byte {
+func WriteVarInt(n int) []byte {
 	var out []byte
 	for {
 		b := byte(n & 0x7F)
@@ -91,12 +106,12 @@ func writeVarInt(n int) []byte {
 }
 
 func WriteString(s string) []byte {
-	out := writeVarInt(len(s))
+	out := WriteVarInt(len(s))
 	out = append(out, []byte(s)...)
 	return out
 }
 
-func WriteInt(i int) []byte {
+func WriteInt(i int32) []byte {
 	var buf [4]byte
 	binary.BigEndian.PutUint32(buf[:], uint32(i))
 	return buf[:]
@@ -115,4 +130,16 @@ func WriteBool(b bool) []byte {
 		return []byte{1}
 	}
 	return []byte{0}
+}
+
+func WriteDouble(d float64) []byte {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], math.Float64bits(d))
+	return buf[:]
+}
+
+func WriteFloat32(f float32) []byte {
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], math.Float32bits(f))
+	return buf[:]
 }

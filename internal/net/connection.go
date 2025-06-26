@@ -2,6 +2,7 @@ package net
 
 import (
 	"bytes"
+	"errors"
 	"github.com/Advik-B/Golem/internal/player"
 	"io"
 	"log"
@@ -16,38 +17,34 @@ const (
 )
 
 type Connection struct {
-	conn  net.Conn
-	state int
-	r     *Reader
-	w     *Writer
-	p     *player.Player
+	conn          net.Conn
+	state         int
+	r             *Reader
+	w             *Writer
+	p             *player.Player
+	addPlayerFunc func(*player.Player)
 }
 
-func NewConnection(conn net.Conn) *Connection {
+func NewConnection(conn net.Conn, addPlayerFunc func(*player.Player)) *Connection {
 	return &Connection{
-		conn:  conn,
-		state: HandshakeState,
-		r:     NewReader(conn),
-		w:     NewWriter(conn),
+		conn:          conn,
+		state:         HandshakeState,
+		r:             NewReader(conn),
+		w:             NewWriter(conn),
+		addPlayerFunc: addPlayerFunc,
 	}
 }
 
-func (c *Connection) Handle() {
-	defer c.conn.Close()
-	for {
-		// This is the main packet-reading loop for the connection
+func (c *Connection) Handle() (*player.Player, error) {
+	for c.state != PlayState {
 		pktLen, err := c.r.ReadVarInt()
 		if err != nil {
-			if err != io.EOF {
-				log.Printf("Error reading packet length: %v", err)
-			}
-			return
+			return nil, err
 		}
 
 		data := make([]byte, pktLen)
 		if _, err := c.r.Read(data); err != nil {
-			log.Printf("Error reading packet data: %v", err)
-			return
+			return nil, err
 		}
 
 		packetReader := NewReader(bytes.NewReader(data))
@@ -55,26 +52,51 @@ func (c *Connection) Handle() {
 
 		switch c.state {
 		case HandshakeState:
-			// The only packet here is Handshake (0x00)
 			c.handleHandshake(packetReader)
 		case StatusState:
 			c.handleStatus(pktID, packetReader)
+			return nil, nil
 		case LoginState:
-			c.handleLogin(pktID, packetReader)
-		case PlayState:
-			// Once in play state, we'll need a different loop, likely involving channels.
-			// For now, we can just log that we are in the play state and stop handling.
-			log.Println("Reached play state. Packet handling will be implemented later.")
+			if err := c.handleLogin(pktID, packetReader); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return c.p, nil
+}
+
+func (c *Connection) HandlePlay() {
+	for {
+		pktLen, err := c.r.ReadVarInt()
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("Error reading packet length in play state: %v", err)
+			}
 			return
+		}
+
+		data := make([]byte, pktLen)
+		if _, err := c.r.Read(data); err != nil {
+			return
+		}
+
+		packetReader := NewReader(bytes.NewReader(data))
+		pktID, _ := packetReader.ReadVarInt()
+
+		if pktID == 0x12 { // ServerboundKeepAlivePacket ID
+			id, _ := packetReader.ReadLong()
+			if id != c.p.LastKeepAliveID {
+				log.Printf("Invalid keep-alive ID from %s. Got %d, expected %d.", c.p.Username, id, c.p.LastKeepAliveID)
+			}
 		}
 	}
 }
 
 func (c *Connection) handleHandshake(r *Reader) {
-	_, _ = r.ReadVarInt() // protocol version
-	_, _ = r.ReadString() // server address
-	r.r.ReadByte()        // port high byte
-	r.r.ReadByte()        // port low byte
+	_, _ = r.ReadVarInt()
+	_, _ = r.ReadString()
+	_, _ = r.r.ReadByte()
+	_, _ = r.r.ReadByte()
 	nextState, _ := r.ReadVarInt()
 	c.state = nextState
 }
@@ -90,49 +112,84 @@ func (c *Connection) handleStatus(pktID int, r *Reader) {
 	}
 }
 
-func (c *Connection) handleLogin(pktID int, r *Reader) {
+func (c *Connection) handleLogin(pktID int, r *Reader) error {
 	if pktID == 0x00 { // Login Start
 		username, _ := r.ReadString()
-		// Ignoring UUID for now
 		log.Printf("Player '%s' is logging in.", username)
 
-		// Create a player object
 		c.p = &player.Player{
 			Conn:     c.conn,
 			Username: username,
-			// UUID will be generated/assigned here
+			State:    LoginState,
 		}
 
-		// Login Success (0x02)
 		c.w.WritePacket(0x02,
-			WriteString("00000000-0000-0000-0000-000000000000"), // Offline mode UUID
+			WriteString("00000000-0000-0000-0000-000000000000"),
 			WriteString(username),
-			writeVarInt(0), // No properties
+			WriteVarInt(0),
 		)
+
 		c.state = PlayState
+		c.p.State = PlayState
 		c.enterPlayState()
+		c.addPlayerFunc(c.p)
+		return nil
 	}
+	return errors.New("unexpected packet in login state")
 }
 
 func (c *Connection) enterPlayState() {
-	// Send Join Game packet
-	c.w.WritePacket(0x26, // Packet ID for Join Game
-		WriteInt(0),                        // Player's Entity ID
-		WriteBool(false),                   // Is hardcore
-		WriteByte(1),                       // Gamemode (Creative)
-		WriteByte(1),                       // Previous Gamemode
-		writeVarInt(1),                     // World Count
-		WriteString("minecraft:overworld"), // World Name
-		WriteString("minecraft:overworld"), // Dimension Codec (placeholder)
-		WriteLong(0),                       // Hashed seed
-		writeVarInt(10),                    // Max players
-		writeVarInt(8),                     // View distance
-		writeVarInt(8),                     // Simulation distance
-		WriteBool(false),                   // Reduced debug info
-		WriteBool(true),                    // Enable respawn screen
-		WriteBool(false),                   // Is debug
-		WriteBool(false),                   // Is flat
+	// Join Game (ClientboundLoginPacket)
+	c.w.WritePacket(0x26,
+		WriteInt(1),
+		WriteBool(false),
+		WriteByte(1),
+		WriteByte(0xFF),
+		WriteVarInt(1),
+		WriteString("minecraft:overworld"),
+		WriteString("minecraft:overworld"),
+		WriteLong(0),
+		WriteVarInt(20),
+		WriteVarInt(10),
+		WriteVarInt(10),
+		WriteBool(false),
+		WriteBool(true),
+		WriteBool(false),
+		WriteBool(true),
+		WriteBool(false),
 	)
 
-	// Keep-alive loop would start here
+	// Brand (ClientboundCustomPayloadPacket)
+	brandPayload := WriteString("Golem")
+	c.w.WritePacket(0x18, // Packet ID for Custom Payload in Play state
+		WriteString("minecraft:brand"),
+		brandPayload,
+	)
+
+	// Difficulty (ClientboundChangeDifficultyPacket)
+	c.w.WritePacket(0x0D,
+		WriteByte(2),
+		WriteBool(true),
+	)
+
+	// Player Abilities (ClientboundPlayerAbilitiesPacket)
+	c.w.WritePacket(0x32,
+		WriteByte(0x06), // can fly, is flying
+		WriteFloat32(0.05),
+		WriteFloat32(0.1),
+	)
+
+	// Set Held Item (ClientboundSetHeldItemPacket)
+	c.w.WritePacket(0x4a, WriteByte(0))
+
+	// Synchronize Player Position (ClientboundPlayerPositionPacket)
+	c.w.WritePacket(0x38,
+		WriteDouble(0.0),
+		WriteDouble(64.0),
+		WriteDouble(0.0),
+		WriteFloat32(0.0),
+		WriteFloat32(0.0),
+		WriteByte(0),
+		WriteVarInt(1),
+	)
 }
