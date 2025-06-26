@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"github.com/Advik-B/Golem/internal/server" // Corrected import
+	"github.com/Advik-B/Golem/internal/server"
 )
 
 func main() {
