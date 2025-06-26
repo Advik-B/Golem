@@ -50,7 +50,7 @@ func CompareTags(a, b Tag, partial bool) bool {
 		return ok && ta.Value == tb.Value
 	case *ByteArrayTag:
 		tb, ok := b.(*ByteArrayTag)
-		return ok && bytes.Equal(ta.Value, tb.Value)
+		return ok && bytes.Equal(int8SliceToByteSlice(ta.Value), int8SliceToByteSlice(tb.Value))
 	case *IntArrayTag:
 		tb, ok := b.(*IntArrayTag)
 		if !ok || len(ta.Value) != len(tb.Value) {
@@ -127,6 +127,15 @@ func CompareTags(a, b Tag, partial bool) bool {
 		// Should not be reached if all types are handled
 		return false
 	}
+}
+
+// int8SliceToByteSlice converts a slice of int8 to a slice of byte.
+func int8SliceToByteSlice(s []int8) []byte {
+	b := make([]byte, len(s))
+	for i, v := range s {
+		b[i] = byte(v)
+	}
+	return b
 }
 
 // --- Structure Template Packing/Unpacking ---
