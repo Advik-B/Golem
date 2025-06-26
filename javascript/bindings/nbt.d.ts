@@ -141,21 +141,21 @@ declare module "nbt" {
 
     /**
      * Creates a new TAG_Byte_Array.
-     * @param v An array of signed 8-bit integers.
+     * @param v An Int8Array of signed 8-bit integers.
      */
-    export function newByteArray(v: number[]): Tag;
+    export function newByteArray(v: Int8Array): Tag;
 
     /**
      * Creates a new TAG_Int_Array.
-     * @param v An array of signed 32-bit integers.
+     * @param v An Int32Array of signed 32-bit integers.
      */
-    export function newIntArray(v: number[]): Tag;
+    export function newIntArray(v: Int32Array): Tag;
 
     /**
      * Creates a new TAG_Long_Array.
-     * @param v An array of signed 64-bit integers.
+     * @param v A BigInt64Array of signed 64-bit integers.
      */
-    export function newLongArray(v: number[]): Tag;
+    export function newLongArray(v: BigInt64Array): Tag;
 
     /**
      * Creates a new TAG_List. Items can be added via `.add()`.
