@@ -1,4 +1,4 @@
-package nbt_test
+package tests
 
 import (
 	"bytes"
