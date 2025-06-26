@@ -99,7 +99,6 @@ func handleConnection(conn net.Conn) {
 		}
 	}
 }
-
 func writePacket(w io.Writer, id int, payload ...[]byte) {
 	p := writeVarInt(id)
 	for _, part := range payload {
