@@ -50,100 +50,13 @@ func (r *testReporter) Log(msg string) {
 // TestGojaNBTBindings runs all JavaScript-based testdata for the NBT bindings.
 func TestGojaNBTBindings(t *testing.T) {
 	tests := map[string]string{
-		"SNBT Parsing and Printing": `
-			const snbt = '{ "key": "value", list: [1b, 2b, 3b] }';
-			const tag = nbt.parse(snbt);
-			if (tag.get('key').value !== 'value') test.fail("Parsed string value is incorrect");
-			if (tag.get('list').length !== 3) test.fail("Parsed list length is incorrect");
-
-			const pretty = tag.toPretty();
-			// FIX: The printer outputs unquoted keys if they are simple. The check must be more robust.
-			// This regex checks for 'key', optional whitespace, ':', optional whitespace, and then '"value"'.
-			if (!/key\s*:\s*"value"/.test(pretty)) {
-				test.fail("Pretty print is missing key-value pair. Output was:\n" + pretty);
-			}
-			test.log("Pretty SNBT:\n" + pretty);
-		`,
-		"Binary Round Trip": `
-			const compound = nbt.newCompound();
-			compound.set("long", nbt.newLong(1234567890));
-			compound.set("string", nbt.newString("hello world"));
-
-			const binary = compound.write("rootName");
-			const result = nbt.read(binary);
-			
-			if (result.name !== "rootName") test.fail("Root name was lost in translation. Got: " + result.name);
-			if (!nbt.compare(compound, result.tag, false)) test.fail("Tag is not the same after round trip");
-		`,
-		"Compressed Round Trip": `
-			const tag = nbt.newIntArray([10, 20, 30]);
-			const compressedBinary = tag.writeCompressed("compressedRoot");
-			const result = nbt.readCompressed(compressedBinary);
-
-			if (result.name !== "compressedRoot") test.fail("Root name was lost in compressed translation.");
-			if (!nbt.compare(tag, result.tag, false)) test.fail("Tag is not the same after compressed round trip");
-		`,
-		"Tag Creation and Getters": `
-			const comp = nbt.newCompound();
-			comp.set("b", nbt.newByte(127));
-			if (comp.get("b").value !== 127) test.fail("Byte value mismatch.");
-			if (comp.get("b").typeName() !== "TAG_Byte") test.fail("Byte type name mismatch.");
-		`,
-		"List Operations": `
-			const list = nbt.newList();
-			list.add(nbt.newInt(1));
-			list.add(nbt.newInt(2));
-			if (list.length !== 2) test.fail("List length should be 2");
-			if (list.get(1).value !== 2) test.fail("List element value is incorrect");
-			if (list.listType !== 3) test.fail("List type ID should be TAG_Int (3)");
-		`,
-		"Error on Invalid SNBT": `
-			// Trailing comma in compound
-			try {
-				nbt.parse('{key:"value",}'); // trailing comma
-				test.fail("Parsing invalid SNBT should have thrown an error (trailing comma in compound).");
-			} catch (e) {
-				test.log("Successfully caught expected error (trailing comma in compound): " + e);
-			}
-			// Invalid type (unquoted string)
-			try {
-				nbt.parse('{key:unquotedString}');
-				test.fail("Parsing invalid SNBT should have thrown an error (unquoted string).");
-			} catch (e) {
-				test.log("Successfully caught expected error (unquoted string): " + e);
-			}
-			// Deeply nested invalid structure (trailing comma in nested list)
-			try {
-				nbt.parse('{outer: {inner: [1, 2,]}}');
-				test.fail("Parsing invalid SNBT should have thrown an error (trailing comma in nested list).");
-			} catch (e) {
-				test.log("Successfully caught expected error (trailing comma in nested list): " + e);
-			}
-			// Incorrect array syntax (trailing comma in array)
-			try {
-				nbt.parse('[I; 1, 2,]');
-				test.fail("Parsing invalid SNBT should have thrown an error (trailing comma in array).");
-			} catch (e) {
-				test.log("Successfully caught expected error (trailing comma in array): " + e);
-			}
-			// Unclosed bracket
-			try {
-				nbt.parse('{key: 1');
-				test.fail("Parsing invalid SNBT should have thrown an error (unclosed bracket).");
-			} catch (e) {
-				test.log("Successfully caught expected error (unclosed bracket): " + e);
-			}
-		`,
-		"Error on Mismatched List Add": `
-			try {
-				const list = nbt.newList();
-				list.add(nbt.newInt(1));
-				list.add(nbt.newString("I should not be here")); // Mismatched type
-				test.fail("Adding a mismatched type to a list should have thrown an error.");
-			} catch (e) {
-				test.log("Successfully caught expected error: " + e);
-			}
-		`,
+		"SNBT Parsing and Printing":    snbtParsing,
+		"Binary Round Trip":            binaryRoundTrip,
+		"Compressed Round Trip":        compressedRoundTrip,
+		"Tag Creation and Getters":     tagCreationAndGetters,
+		"List Operations":              listOperations,
+		"Error on Invalid SNBT":        errorOnInvalidSNBT,
+		"Error on Mismatched List Add": errorOnMismatchedListAdd,
 	}
 
 	for name, script := range tests {
