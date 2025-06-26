@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"github.com/Advik-B/Golem/internal/player"
+	"github.com/Advik-B/Golem/nbt"
 	"io"
 	"log"
 	"net"
@@ -139,57 +140,73 @@ func (c *Connection) handleLogin(pktID int, r *Reader) error {
 }
 
 func (c *Connection) enterPlayState() {
-	// Join Game (ClientboundLoginPacket)
+	// ClientboundLoginPacket (0x26)
+	// We now construct this packet with the correct fields for 1.21.
+	codecTag := GetDimensionCodec()
+	var codecBuf bytes.Buffer
+	// The dimension codec is sent as a standalone NBT tag.
+	if err := nbt.Write(&codecBuf, nbt.NamedTag{Name: "", Tag: codecTag}); err != nil {
+		panic("failed to write dimension codec to buffer: " + err.Error())
+	}
+
 	c.w.WritePacket(0x26,
-		WriteInt(1),
-		WriteBool(false),
-		WriteByte(1),
-		WriteByte(0xFF),
-		WriteVarInt(1),
+		WriteInt(1),      // entityId
+		WriteBool(false), // is hardcore
+		// World Names (Array of Identifier)
+		WriteVarInt(1), // One world
 		WriteString("minecraft:overworld"),
-		WriteString("minecraft:overworld"),
-		WriteLong(0),
-		WriteVarInt(20),
-		WriteVarInt(10),
-		WriteVarInt(10),
-		WriteBool(false),
-		WriteBool(true),
-		WriteBool(false),
-		WriteBool(true),
-		WriteBool(false),
+		// End of World Names
+		WriteVarInt(20),  // maxPlayers
+		WriteVarInt(10),  // viewDistance
+		WriteVarInt(10),  // simulationDistance
+		WriteBool(false), // reducedDebugInfo
+		WriteBool(true),  // enableRespawnScreen
+		WriteBool(false), // isDebug
+		WriteBool(true),  // isFlat
+
+		// CommonPlayerSpawnInfo starts here
+		codecBuf.Bytes(),                   // Dimension Codec NBT
+		WriteString("minecraft:overworld"), // Dimension Name
+		WriteLong(0),                       // Hashed seed
+		WriteByte(1),                       // gameType (Creative)
+		WriteByte(0xFF),                    // previousGameType (-1 for none)
+		WriteBool(false),                   // isDebug (again, for spawn info)
+		WriteBool(true),                    // isFlat (again, for spawn info)
+		WriteBool(false),                   // No last death location
+		WriteVarInt(0),                     // portalCooldown
 	)
 
-	// Brand (ClientboundCustomPayloadPacket)
+	// ClientboundCustomPayloadPacket (Brand) - ID is 0x19 in Play state
 	brandPayload := WriteString("Golem")
-	c.w.WritePacket(0x18, // Packet ID for Custom Payload in Play state
+	c.w.WritePacket(0x19,
 		WriteString("minecraft:brand"),
 		brandPayload,
 	)
 
-	// Difficulty (ClientboundChangeDifficultyPacket)
-	c.w.WritePacket(0x0D,
-		WriteByte(2),
-		WriteBool(true),
+	// ClientboundChangeDifficultyPacket
+	c.w.WritePacket(0x0E,
+		WriteByte(1),    // Difficulty (easy)
+		WriteBool(true), // Locked
 	)
 
-	// Player Abilities (ClientboundPlayerAbilitiesPacket)
+	// ClientboundPlayerAbilitiesPacket
 	c.w.WritePacket(0x32,
-		WriteByte(0x06), // can fly, is flying
-		WriteFloat32(0.05),
-		WriteFloat32(0.1),
+		WriteByte(0x06),    // Flags (invulnerable, flying)
+		WriteFloat32(0.05), // Flying Speed
+		WriteFloat32(0.1),  // FOV Modifier
 	)
 
-	// Set Held Item (ClientboundSetHeldItemPacket)
-	c.w.WritePacket(0x4a, WriteByte(0))
+	// ClientboundSetHeldItemPacket
+	c.w.WritePacket(0x4A, WriteByte(0)) // slot 0
 
-	// Synchronize Player Position (ClientboundPlayerPositionPacket)
-	c.w.WritePacket(0x38,
-		WriteDouble(0.0),
-		WriteDouble(64.0),
-		WriteDouble(0.0),
-		WriteFloat32(0.0),
-		WriteFloat32(0.0),
-		WriteByte(0),
-		WriteVarInt(1),
+	// ClientboundPlayerPositionPacket
+	c.w.WritePacket(0x3E, // This was 0x38, correct ID for 1.21 is 0x3E
+		WriteDouble(0.0),   // X
+		WriteDouble(100.0), // Y
+		WriteDouble(0.0),   // Z
+		WriteFloat32(0.0),  // Yaw
+		WriteFloat32(0.0),  // Pitch
+		WriteByte(0),       // flags
+		WriteVarInt(1),     // teleport id
 	)
 }
