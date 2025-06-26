@@ -21,7 +21,7 @@ try {
 }
 // Incorrect array syntax (trailing comma in array)
 try {
-    nbt.parse('[I; 1, 2,]');
+    nbt.parse('{a:[I; 1, 2,]}');
     test.fail("Parsing invalid SNBT should have thrown an error (trailing comma in array).");
 } catch (e) {
     test.log("Successfully caught expected error (trailing comma in array): " + e);
