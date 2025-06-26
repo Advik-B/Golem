@@ -1,4 +1,4 @@
-package tests
+package jsbindings
 
 import (
 	"github.com/Advik-B/Golem/javascript"
