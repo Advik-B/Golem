@@ -18,10 +18,10 @@ func (t *EndTag) write(w io.Writer) error { return nil }
 func (t *EndTag) read(r io.Reader) error  { return nil }
 func (t *EndTag) Copy() Tag               { return new(EndTag) }
 
-type ByteTag struct{ Value byte }
+type ByteTag struct{ Value int8 }
 
 func (t *ByteTag) ID() TagID               { return TagByte }
-func (t *ByteTag) String() string          { return fmt.Sprintf("%db", int8(t.Value)) }
+func (t *ByteTag) String() string          { return fmt.Sprintf("%db", t.Value) }
 func (t *ByteTag) write(w io.Writer) error { return binary.Write(w, binary.BigEndian, t.Value) }
 func (t *ByteTag) read(r io.Reader) error  { return binary.Read(r, binary.BigEndian, &t.Value) }
 func (t *ByteTag) Copy() Tag               { return &ByteTag{Value: t.Value} }
@@ -80,7 +80,7 @@ func (t *StringTag) Copy() Tag { return &StringTag{Value: t.Value} }
 
 // --- Array Tags ---
 
-type ByteArrayTag struct{ Value []byte }
+type ByteArrayTag struct{ Value []int8 }
 
 func (t *ByteArrayTag) ID() TagID { return TagByteArray }
 func (t *ByteArrayTag) String() string {
@@ -90,7 +90,7 @@ func (t *ByteArrayTag) String() string {
 		if i > 0 {
 			sb.WriteString(",")
 		}
-		sb.WriteString(fmt.Sprintf("%d", b))
+		sb.WriteString(fmt.Sprintf(" %db", b))
 	}
 	sb.WriteString("]")
 	return sb.String()
@@ -99,8 +99,8 @@ func (t *ByteArrayTag) write(w io.Writer) error {
 	if err := binary.Write(w, binary.BigEndian, int32(len(t.Value))); err != nil {
 		return err
 	}
-	_, err := w.Write(t.Value)
-	return err
+	// binary.Write can handle slices of fixed-size data like []int8 directly.
+	return binary.Write(w, binary.BigEndian, t.Value)
 }
 func (t *ByteArrayTag) read(r io.Reader) error {
 	var size int32
@@ -110,12 +110,12 @@ func (t *ByteArrayTag) read(r io.Reader) error {
 	if size < 0 {
 		return fmt.Errorf("negative array size: %d", size)
 	}
-	t.Value = make([]byte, size)
-	_, err := io.ReadFull(r, t.Value)
-	return err
+	t.Value = make([]int8, size)
+	// binary.Read can populate the slice directly.
+	return binary.Read(r, binary.BigEndian, &t.Value)
 }
 func (t *ByteArrayTag) Copy() Tag {
-	c := make([]byte, len(t.Value))
+	c := make([]int8, len(t.Value))
 	copy(c, t.Value)
 	return &ByteArrayTag{Value: c}
 }
