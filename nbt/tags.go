@@ -21,7 +21,7 @@ func (t *EndTag) Copy() Tag               { return new(EndTag) }
 type ByteTag struct{ Value byte }
 
 func (t *ByteTag) ID() TagID               { return TagByte }
-func (t *ByteTag) String() string          { return fmt.Sprintf("%db", t.Value) }
+func (t *ByteTag) String() string          { return fmt.Sprintf("%db", int8(t.Value)) }
 func (t *ByteTag) write(w io.Writer) error { return binary.Write(w, binary.BigEndian, t.Value) }
 func (t *ByteTag) read(r io.Reader) error  { return binary.Read(r, binary.BigEndian, &t.Value) }
 func (t *ByteTag) Copy() Tag               { return &ByteTag{Value: t.Value} }
