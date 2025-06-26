@@ -2,6 +2,7 @@ package javascript
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/Advik-B/Golem/nbt"
 	"github.com/dop251/goja"
 )
@@ -22,7 +23,6 @@ func NewNbtModule(runtime *goja.Runtime) *goja.Object {
 	obj.Set("parse", m.parseSNBT)
 	obj.Set("toPretty", m.toPrettySNBT)
 	obj.Set("toCompact", m.toCompactSNBT)
-	// Updated read functions
 	obj.Set("read", func(buffer goja.Value) *goja.Object { return m.readBinary(buffer, false) })
 	obj.Set("readCompressed", func(buffer goja.Value) *goja.Object { return m.readBinary(buffer, true) })
 	obj.Set("compare", m.compare)
@@ -50,15 +50,13 @@ func (m *NbtModule) toProxy(tag nbt.Tag) *goja.Object {
 		return nil
 	}
 	obj := m.runtime.NewObject()
-	obj.Set(nativeTag, tag) // Store the original Go tag
+	obj.Set(nativeTag, tag)
 
-	// Common methods for all tags
 	obj.Set("toString", func() string { return nbt.ToCompactSNBT(tag) })
 	obj.Set("toPretty", func() string { return nbt.ToPrettySNBT(tag) })
 	obj.Set("id", func() nbt.TagID { return tag.ID() })
 	obj.Set("typeName", func() string { return nbt.TagTypeNames[tag.ID()] })
 	obj.Set("copy", func() *goja.Object { return m.toProxy(tag.Copy()) })
-	// Updated write methods to accept an optional name
 	obj.Set("write", func(name ...string) goja.Value {
 		rootName := ""
 		if len(name) > 0 {
@@ -74,7 +72,6 @@ func (m *NbtModule) toProxy(tag nbt.Tag) *goja.Object {
 		return m.writeBinary(tag, rootName, true)
 	})
 
-	// Type-specific properties and methods
 	switch t := tag.(type) {
 	case *nbt.CompoundTag:
 		obj.Set("get", func(key string) *goja.Object {
@@ -103,8 +100,19 @@ func (m *NbtModule) toProxy(tag nbt.Tag) *goja.Object {
 			}
 			return nil
 		})
-		obj.Set("length", len(t.Value))
-		obj.Set("listType", t.Type)
+
+		// FIX: Define 'length' and 'listType' as true getter properties.
+		// This resolves the build error and fixes the logic bug.
+		getterLength := m.runtime.ToValue(func() int { return len(t.Value) })
+		if err := obj.DefineAccessorProperty("length", getterLength, nil, goja.FLAG_TRUE, goja.FLAG_FALSE); err != nil {
+			panic(fmt.Errorf("could not define 'length' accessor: %w", err))
+		}
+
+		getterType := m.runtime.ToValue(func() nbt.TagID { return t.Type })
+		if err := obj.DefineAccessorProperty("listType", getterType, nil, goja.FLAG_TRUE, goja.FLAG_FALSE); err != nil {
+			panic(fmt.Errorf("could not define 'listType' accessor: %w", err))
+		}
+
 	case *nbt.ByteTag:
 		obj.Set("value", t.Value)
 	case *nbt.ShortTag:
@@ -167,7 +175,6 @@ func (m *NbtModule) toCompactSNBT(obj *goja.Object) string {
 // writeBinary is the internal helper for writing NBT data.
 func (m *NbtModule) writeBinary(tag nbt.Tag, name string, compressed bool) goja.Value {
 	var buf bytes.Buffer
-	// Use the provided name for the root tag
 	namedTag := nbt.NamedTag{Name: name, Tag: tag}
 	var err error
 	if compressed {
@@ -202,7 +209,6 @@ func (m *NbtModule) readBinary(buffer goja.Value, compressed bool) *goja.Object 
 		panic(m.runtime.ToValue(err.Error()))
 	}
 
-	// Create a result object to hold both the name and the tag proxy
 	result := m.runtime.NewObject()
 	result.Set("name", namedTag.Name)
 	result.Set("tag", m.toProxy(namedTag.Tag))
