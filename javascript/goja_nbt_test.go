@@ -1,11 +1,33 @@
 package js
 
 import (
+	_ "embed" // For embedding test scripts
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"
 )
+
+//go:embed testdata/snbt_parsing.js
+var snbtParsing string
+
+//go:embed testdata/binary_round_trip.js
+var binaryRoundTrip string
+
+//go:embed testdata/compressed_round_trip.js
+var compressedRoundTrip string
+
+//go:embed testdata/tag_creation_and_getters.js
+var tagCreationAndGetters string
+
+//go:embed testdata/list_operations.js
+var listOperations string
+
+//go:embed testdata/error_on_invalid_snbt.js
+var errorOnInvalidSNBT string
+
+//go:embed testdata/error_on_mismatched_list_add.js
+var errorOnMismatchedListAdd string
 
 // testReporter allows JS to report failures back to the Go test runner.
 type testReporter struct {
@@ -25,7 +47,7 @@ func (r *testReporter) Log(msg string) {
 	r.t.Logf("JS log: %s", msg)
 }
 
-// TestGojaNBTBindings runs all JavaScript-based tests for the NBT bindings.
+// TestGojaNBTBindings runs all JavaScript-based testdata for the NBT bindings.
 func TestGojaNBTBindings(t *testing.T) {
 	tests := map[string]string{
 		"SNBT Parsing and Printing": `
