@@ -1,4 +1,4 @@
-const tag = nbt.newIntArray([10, 20, 30]);
+const tag = nbt.newIntArray(new Int32Array([10, 20, 30]));
 const compressedBinary = tag.writeCompressed("compressedRoot");
 const result = nbt.readCompressed(compressedBinary);
 
