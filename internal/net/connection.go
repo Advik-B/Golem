@@ -3,10 +3,12 @@ package net
 import (
 	"bytes"
 	"errors"
-	"github.com/Advik-B/Golem/internal/player"
 	"io"
 	"log"
 	"net"
+
+	"github.com/Advik-B/Golem/internal/player"
+	"github.com/google/uuid"
 )
 
 const (
@@ -60,8 +62,8 @@ func (c *Connection) HandleConfiguration() error {
 		return err
 	}
 
-	// Packet ID should be 0x02 ServerboundFinishConfigurationPacket
-	c.w.WritePacket(0x03) // ClientboundFinishConfigurationPacket
+	// ClientboundFinishConfigurationPacket (0x03)
+	c.w.WritePacket(0x03)
 	c.state = PlayState
 	return nil
 }
@@ -84,7 +86,7 @@ func (c *Connection) HandlePlay(p *player.Player) {
 		packetReader := NewReader(bytes.NewReader(data))
 		pktID, _ := packetReader.ReadVarInt()
 
-		// ServerboundKeepAlivePacket for 1.21 is 0x15
+		// ServerboundKeepAlivePacket (1.21) = 0x15
 		if pktID == 0x15 {
 			id, _ := packetReader.ReadLong()
 			if id != p.LastKeepAliveID {
@@ -104,15 +106,11 @@ func (c *Connection) handleHandshake() error {
 		return err
 	}
 	packetReader := NewReader(bytes.NewReader(data))
-	_, err = packetReader.ReadVarInt() // Packet ID
-	if err != nil {
-		return err
-	}
-
-	_, _ = packetReader.ReadVarInt() // protocol
-	_, _ = packetReader.ReadString() // host
-	_, _ = packetReader.r.ReadByte() // port
-	_, _ = packetReader.r.ReadByte() // port
+	_, _ = packetReader.ReadVarInt() // Packet ID
+	_, _ = packetReader.ReadVarInt() // Protocol Version
+	_, _ = packetReader.ReadString() // Server Address
+	_, _ = packetReader.r.ReadByte() // Port high byte
+	_, _ = packetReader.r.ReadByte() // Port low byte
 	nextState, _ := packetReader.ReadVarInt()
 	c.state = nextState
 	return nil
@@ -123,7 +121,7 @@ func (c *Connection) handleStatus() {
 	data := make([]byte, pktLen)
 	c.r.Read(data)
 
-	resp := `{"version":{"name":"Golem 1.21","protocol":767},"players":{"max":100,"online":0,"sample":[]},"description":{"text":"A Golem Server 🗿"}}`
+	resp := `{"version":{"name":"Golem 1.21.5","protocol":767},"players":{"max":100,"online":0,"sample":[]},"description":{"text":"Welcome to Golem 🗿"}}`
 	c.w.WritePacket(0x00, WriteString(resp))
 
 	pktLen, _ = c.r.ReadVarInt()
@@ -144,18 +142,23 @@ func (c *Connection) handleLoginStart(addPlayerFunc func(*player.Player)) (*play
 	}
 	packetReader := NewReader(bytes.NewReader(data))
 	_, _ = packetReader.ReadVarInt()
-
 	username, _ := packetReader.ReadString()
-	p := player.New(c.conn, username)
 
-	// ClientboundLoginSuccessPacket (ID 0x02)
+	// Offline-mode UUID: uuid.NewSHA1(Namespace, name)
+	uuidValue := uuid.NewSHA1(uuid.NameSpaceOID, []byte("OfflinePlayer:"+username))
+
+	// ClientboundLoginSuccessPacket (0x02)
 	c.w.WritePacket(0x02,
-		WriteString("00000000-0000-0000-0000-000000000000"),
+		WriteString(uuidValue.String()),
 		WriteString(username),
-		WriteVarInt(0),
+		WriteVarInt(0), // 0 properties
 	)
 
+	// ClientboundLoginFinished (0x04)
+	c.w.WritePacket(0x04)
+
+	p := player.New(c.conn, username)
 	addPlayerFunc(p)
-	c.state = ConfigurationState // Transition connection state
+	c.state = ConfigurationState
 	return p, nil
 }

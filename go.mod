@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	github.com/dop251/goja v0.0.0-20250624190929-4d26883d182a
+	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.8.1
 )
 

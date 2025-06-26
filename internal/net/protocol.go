@@ -2,21 +2,50 @@ package net
 
 import (
 	"bufio"
+	"crypto/cipher"
 	"encoding/binary"
 	"io"
 	"math"
 )
 
 type Reader struct {
-	r *bufio.Reader
+	r         *bufio.Reader
+	decStream cipher.Stream
+}
+
+//func (r *Reader) EnableEncryption(secret []byte) {
+//	block, _ := aes.NewCipher(secret)
+//	r.decStream = cipher.NewCFB8Decrypter(block, secret)
+//}
+
+func (r *Reader) Read(p []byte) (int, error) {
+	n, err := io.ReadFull(r.r, p)
+	if err == nil && r.decStream != nil {
+		r.decStream.XORKeyStream(p[:n], p[:n])
+	}
+	return n, err
+}
+
+type Writer struct {
+	w         io.Writer
+	encStream cipher.Stream
+}
+
+//func (w *Writer) EnableEncryption(block cipher.Block, secret []byte) {
+//	w.encStream = cipher.NewCFB8Encrypter(block, secret)
+//}
+
+func (w *Writer) Write(p []byte) (int, error) {
+	if w.encStream != nil {
+		buf := make([]byte, len(p))
+		w.encStream.XORKeyStream(buf, p)
+		return w.w.Write(buf)
+	}
+	return w.w.Write(p)
 }
 
 func NewReader(r io.Reader) *Reader {
 	return &Reader{r: bufio.NewReader(r)}
-}
-
-func (r *Reader) Read(p []byte) (n int, err error) {
-	return io.ReadFull(r.r, p)
 }
 
 func (r *Reader) ReadByte() (byte, error) {
@@ -61,16 +90,8 @@ func (r *Reader) ReadLong() (int64, error) {
 	return val, err
 }
 
-type Writer struct {
-	w io.Writer
-}
-
 func NewWriter(w io.Writer) *Writer {
 	return &Writer{w: w}
-}
-
-func (w *Writer) Write(p []byte) (n int, err error) {
-	return w.w.Write(p)
 }
 
 func (w *Writer) WritePacket(id int, payload ...[]byte) {
