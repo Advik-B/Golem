@@ -1,4 +1,4 @@
-package javascript
+package js
 
 import (
 	"bytes"
