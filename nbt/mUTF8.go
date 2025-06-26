@@ -7,8 +7,9 @@ import (
 	"unicode/utf8"
 )
 
-// decodeMUTF8 decodes a byte slice from Java's Modified UTF-8 format into a Go string.
 // This implementation correctly handles the special null character encoding and surrogate pairs.
+
+// decodeMUTF8 decodes a byte slice from Java's Modified UTF-8 format into a Go string.
 func decodeMUTF8(b []byte) string {
 	var runes []rune
 	for i := 0; i < len(b); {
@@ -89,7 +90,6 @@ func decodeMUTF8(b []byte) string {
 }
 
 // encodeMUTF8 encodes a Go string into a byte slice in Java's Modified UTF-8 format.
-// This implementation correctly handles the special null character encoding and surrogate pairs.
 func encodeMUTF8(s string) []byte {
 	var buf bytes.Buffer
 	for _, r := range s {
