@@ -35,9 +35,33 @@ func NewNbtModule(runtime *goja.Runtime) *goja.Object {
 	obj.Set("newFloat", func(v float32) *goja.Object { return m.toProxy(&nbt.FloatTag{Value: v}) })
 	obj.Set("newDouble", func(v float64) *goja.Object { return m.toProxy(&nbt.DoubleTag{Value: v}) })
 	obj.Set("newString", func(v string) *goja.Object { return m.toProxy(&nbt.StringTag{Value: v}) })
-	obj.Set("newByteArray", func(v []int8) *goja.Object { return m.toProxy(&nbt.ByteArrayTag{Value: v}) })
-	obj.Set("newIntArray", func(v []int32) *goja.Object { return m.toProxy(&nbt.IntArrayTag{Value: v}) })
-	obj.Set("newLongArray", func(v []int64) *goja.Object { return m.toProxy(&nbt.LongArrayTag{Value: v}) })
+
+	// Factories for array types now accept JavaScript TypedArrays and throw a JS TypeError on failure.
+	obj.Set("newByteArray", func(call goja.FunctionCall) goja.Value {
+		arg := call.Argument(0)
+		val, ok := arg.Export().([]int8)
+		if !ok {
+			panic(m.runtime.NewTypeError("newByteArray expects an Int8Array"))
+		}
+		return m.toProxy(&nbt.ByteArrayTag{Value: val})
+	})
+	obj.Set("newIntArray", func(call goja.FunctionCall) goja.Value {
+		arg := call.Argument(0)
+		val, ok := arg.Export().([]int32)
+		if !ok {
+			panic(m.runtime.NewTypeError("newIntArray expects an Int32Array"))
+		}
+		return m.toProxy(&nbt.IntArrayTag{Value: val})
+	})
+	obj.Set("newLongArray", func(call goja.FunctionCall) goja.Value {
+		arg := call.Argument(0)
+		val, ok := arg.Export().([]int64)
+		if !ok {
+			panic(m.runtime.NewTypeError("newLongArray expects a BigInt64Array"))
+		}
+		return m.toProxy(&nbt.LongArrayTag{Value: val})
+	})
+
 	obj.Set("newList", func() *goja.Object { return m.toProxy(&nbt.ListTag{}) })
 	obj.Set("newCompound", func() *goja.Object { return m.toProxy(nbt.NewCompoundTag()) })
 
@@ -91,7 +115,7 @@ func (m *NbtModule) toProxy(tag nbt.Tag) *goja.Object {
 	case *nbt.ListTag:
 		obj.Set("add", func(val *goja.Object) {
 			if err := t.Add(m.fromProxy(val)); err != nil {
-				panic(m.runtime.ToValue(err.Error()))
+				panic(m.runtime.NewGoError(err))
 			}
 		})
 		obj.Set("get", func(i int) *goja.Object {
@@ -157,7 +181,7 @@ func (m *NbtModule) fromProxy(obj *goja.Object) nbt.Tag {
 func (m *NbtModule) parseSNBT(snbt string) *goja.Object {
 	tag, err := nbt.ParseSNBT(snbt)
 	if err != nil {
-		panic(m.runtime.ToValue(err.Error()))
+		panic(m.runtime.NewGoError(err))
 	}
 	return m.toProxy(tag)
 }
@@ -183,7 +207,7 @@ func (m *NbtModule) writeBinary(tag nbt.Tag, name string, compressed bool) goja.
 		err = nbt.Write(&buf, namedTag)
 	}
 	if err != nil {
-		panic(m.runtime.ToValue(err.Error()))
+		panic(m.runtime.NewGoError(err))
 	}
 	return m.runtime.ToValue(m.runtime.NewArrayBuffer(buf.Bytes()))
 }
@@ -192,7 +216,7 @@ func (m *NbtModule) writeBinary(tag nbt.Tag, name string, compressed bool) goja.
 func (m *NbtModule) readBinary(buffer goja.Value, compressed bool) *goja.Object {
 	ab, ok := buffer.Export().(goja.ArrayBuffer)
 	if !ok {
-		panic(m.runtime.ToValue("expected an ArrayBuffer"))
+		panic(m.runtime.NewGoError(fmt.Errorf("expected an ArrayBuffer")))
 	}
 
 	reader := bytes.NewReader(ab.Bytes())
@@ -206,7 +230,7 @@ func (m *NbtModule) readBinary(buffer goja.Value, compressed bool) *goja.Object 
 	}
 
 	if err != nil {
-		panic(m.runtime.ToValue(err.Error()))
+		panic(m.runtime.NewGoError(err))
 	}
 
 	result := m.runtime.NewObject()
