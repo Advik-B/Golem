@@ -24,13 +24,14 @@ func createTestTag() *nbt.CompoundTag {
 
 	master := nbt.NewCompoundTag()
 	master.Put("byte_tag", &nbt.ByteTag{Value: 127})
+	master.Put("negative_byte_tag", &nbt.ByteTag{Value: -128})
 	master.Put("short_tag", &nbt.ShortTag{Value: 32767})
 	master.Put("int_tag", &nbt.IntTag{Value: 2147483647})
 	master.Put("long_tag", &nbt.LongTag{Value: 9223372036854775807})
 	master.Put("float_tag", &nbt.FloatTag{Value: 3.14159})
 	master.Put("double_tag", &nbt.DoubleTag{Value: 2.71828})
 	master.Put("string_tag", &nbt.StringTag{Value: "Hello, World! This string has \"quotes\" and 'apostrophes'."})
-	master.Put("byte_array_tag", &nbt.ByteArrayTag{Value: []byte{0, 1, 2, 3, 4, 5}})
+	master.Put("byte_array_tag", &nbt.ByteArrayTag{Value: []int8{0, 1, 2, 3, 4, 5}})
 	master.Put("int_array_tag", &nbt.IntArrayTag{Value: []int32{-10, 0, 10, 20}})
 	master.Put("long_array_tag", &nbt.LongArrayTag{Value: []int64{-1000, 0, 1000, 2000}})
 	master.Put("list_of_doubles", doubleList)
@@ -84,8 +85,6 @@ func TestBinaryIO(t *testing.T) {
 // TestSNBTParsing ensures the string-to-tag parser works for valid and invalid inputs.
 func TestSNBTParsing(t *testing.T) {
 	t.Run("ValidSNBT", func(t *testing.T) {
-		// NOTE: NBT lists must contain only one tag type. The original test had mixed number types,
-		// which is invalid. This version uses a valid list of a single type (doubles).
 		snbtString := `
 		{
 			"unquoted_key": "some value",
@@ -102,22 +101,22 @@ func TestSNBTParsing(t *testing.T) {
 		require.NoError(t, err, "Should successfully parse valid SNBT")
 		require.NotNil(t, parsed)
 
-		// Verify a few values to confirm correctness
+		// FIX: Update assertions to expect int8 and []int8 types.
 		s, ok := parsed.GetString("unquoted_key")
 		assert.True(t, ok)
 		assert.Equal(t, "some value", s)
 
 		bTag, ok := parsed.Get("quoted_key")
 		require.True(t, ok)
-		assert.Equal(t, byte(123), bTag.(*nbt.ByteTag).Value)
+		assert.Equal(t, int8(123), bTag.(*nbt.ByteTag).Value)
 
 		trueVal, ok := parsed.Get("true_val")
 		require.True(t, ok)
-		assert.Equal(t, byte(1), trueVal.(*nbt.ByteTag).Value)
+		assert.Equal(t, int8(1), trueVal.(*nbt.ByteTag).Value)
 
 		baTag, ok := parsed.Get("byte_array")
 		require.True(t, ok)
-		assert.Equal(t, []byte{1, 2, 3}, baTag.(*nbt.ByteArrayTag).Value)
+		assert.Equal(t, []int8{1, 2, 3}, baTag.(*nbt.ByteArrayTag).Value)
 
 		listTag, ok := parsed.GetList("num_list")
 		require.True(t, ok)
