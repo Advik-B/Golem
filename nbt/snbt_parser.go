@@ -196,7 +196,7 @@ func (p *parser) parseList() (*ListTag, error) {
 
 func (p *parser) parseByteArray() (*ByteArrayTag, error) {
 	p.cursor += 2 // Skip 'B;'
-	var values []byte
+	var values []int8
 	for {
 		p.skipWhitespace()
 		if p.peek() == ']' {
@@ -356,7 +356,7 @@ func (p *parser) parseNumber(contextualType TagID) (Tag, error) {
 		switch suffix {
 		case 'b':
 			v, err := strconv.ParseInt(numStr, 10, 8)
-			return &ByteTag{Value: byte(v)}, err
+			return &ByteTag{Value: int8(v)}, err
 		case 's':
 			v, err := strconv.ParseInt(numStr, 10, 16)
 			return &ShortTag{Value: int16(v)}, err
@@ -385,7 +385,7 @@ func (p *parser) parseNumber(contextualType TagID) (Tag, error) {
 	switch contextualType {
 	case TagByte:
 		v, err := strconv.ParseInt(numStr, 10, 8)
-		return &ByteTag{Value: byte(v)}, err
+		return &ByteTag{Value: int8(v)}, err
 	case TagShort:
 		v, err := strconv.ParseInt(numStr, 10, 16)
 		return &ShortTag{Value: int16(v)}, err
