@@ -2,12 +2,12 @@ package server
 
 import (
 	"fmt"
-	"github.com/Advik-B/Golem/protocol/codec"
 	"sync"
 	"time"
 
 	"github.com/Advik-B/Golem/log"
 	"github.com/Advik-B/Golem/protocol"
+	"github.com/Advik-B/Golem/protocol/codec"
 	"github.com/panjf2000/gnet/v2"
 	"go.uber.org/zap"
 )
@@ -38,7 +38,7 @@ func (c *Connection) SetState(newState protocol.State) {
 	if c.state != newState {
 		log.Logger.Debug("Connection state changed",
 			zap.Stringer("remote_addr", c.RemoteAddr()),
-			zap.Stringer("from", &c.state),
+			zap.Stringer("from", &c.state), // Pass as pointer to satisfy zap.Stringer
 			zap.Stringer("to", &newState),
 		)
 		c.state = newState
@@ -53,9 +53,9 @@ func (c *Connection) WritePacket(p protocol.Packet) error {
 		return fmt.Errorf("failed to write packet ID: %w", err)
 	}
 	if err := p.WriteTo(payloadBuf); err != nil {
-		return fmt.Errorf("failed to write packet data: %w", err)
+		return fmt.Errorf("failed to write packet data for %T: %w", p, err)
 	}
 
-	// The FrameCodec on the server will automatically prepend the final length.
+	// gnet will call the codec's Encode method, which prepends the length.
 	return c.AsyncWrite(payloadBuf.Bytes(), nil)
 }
