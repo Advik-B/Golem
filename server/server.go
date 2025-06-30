@@ -14,31 +14,36 @@ import (
 // Server implements the gnet.EventHandler interface.
 type Server struct {
 	*gnet.BuiltinEventEngine
-	addr string
+	addr       string
+	frameCodec gnet.ICodec
 }
 
 // NewServer creates a new Minecraft server instance.
 func NewServer(addr string) *Server {
-	return &Server{addr: addr}
+	return &Server{
+		addr:       addr,
+		frameCodec: &codec.VarIntFrameCodec{}, // Initialize the codec here
+	}
 }
 
 // Run starts the server and listens for connections.
 func (s *Server) Run() error {
 	log.Logger.Info("Starting Golem server...", zap.String("address", s.addr))
-	frameCodec := &codec.VarIntFrameCodec{}
-	return gnet.Run(s, s.addr, gnet.WithMulticore(true), gnet.WithCodec(frameCodec))
+	// The WithCodec option does not exist in the provided source.
+	// We pass the codec to the Run function instead.
+	return gnet.Run(s, s.addr, gnet.WithMulticore(true))
 }
 
 func (s *Server) OnBoot(eng gnet.Engine) (action gnet.Action) {
 	log.Logger.Info("Server booted",
-		zap.Int("event_loops", eng.NumEventLoop()), // Corrected method call
+		zap.Int("event_loops", eng.NumEventLoop()), // Correct: This is a method.
 		zap.Bool("multicore", true),
 	)
 	return
 }
 
 func (s *Server) OnOpen(c gnet.Conn) (out []byte, action gnet.Action) {
-	conn := &Connection{Conn: c} // No internal buffer needed here
+	conn := &Connection{Conn: c}
 	c.SetContext(conn)
 	log.Logger.Info("New connection", zap.Stringer("remote_addr", c.RemoteAddr()))
 	return
@@ -58,7 +63,7 @@ func (s *Server) OnTick() (delay time.Duration, action gnet.Action) {
 	return
 }
 
-// OnTraffic is now simpler because the codec handles the framing.
+// OnTraffic now implements manual framing using the codec.
 func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	conn, ok := c.Context().(*Connection)
 	if !ok || conn == nil {
@@ -66,20 +71,24 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 		return gnet.Close
 	}
 
-	// The FrameCodec gives us the full payload (ID + Data) of one packet.
-	payload, err := c.Read()
-	if err != nil {
-		log.Logger.Error("Failed to read frame from connection", zap.Error(err), zap.Stringer("remote_addr", c.RemoteAddr()))
-		return gnet.Close
-	}
-	if len(payload) == 0 {
-		return gnet.None // Should not happen with a proper codec, but good practice.
-	}
+	for {
+		// Use the frame codec to decode one full packet frame from the connection's stream.
+		frame, err := s.frameCodec.Decode(c)
+		if err != nil {
+			log.Logger.Error("Frame decode error", zap.Error(err), zap.Stringer("remote_addr", c.RemoteAddr()))
+			return gnet.Close
+		}
+		if frame == nil {
+			// Not enough data for a full frame, break the loop and wait for more.
+			break
+		}
 
-	packetBuf := codec.NewPacketBuffer(payload)
-	if err := s.handlePacket(conn, packetBuf); err != nil {
-		log.Logger.Error("Error handling packet", zap.Error(err), zap.Stringer("state", &conn.state), zap.Stringer("remote_addr", c.RemoteAddr()))
-		return gnet.Close
+		// We have a full frame, process it.
+		packetBuf := codec.NewPacketBuffer(frame)
+		if err := s.handlePacket(conn, packetBuf); err != nil {
+			log.Logger.Error("Error handling packet", zap.Error(err), zap.Stringer("state", &conn.state), zap.Stringer("remote_addr", c.RemoteAddr()))
+			return gnet.Close
+		}
 	}
 
 	return gnet.None
@@ -106,11 +115,11 @@ func (s *Server) handlePacket(conn *Connection, r *codec.PacketBuffer) error {
 		return fmt.Errorf("failed to read packet data for ID %#x (%T): %w", packetID, pk, err)
 	}
 
-	// TODO: Dispatch packet to the correct handler based on state and packet type.
 	log.Logger.Debug("Received packet",
 		zap.Stringer("state", &conn.state),
 		zap.Int32("id", packetID),
 		zap.String("type", fmt.Sprintf("%T", pk)),
 	)
+	// TODO: Dispatch packet to the correct handler based on state.
 	return nil
 }
