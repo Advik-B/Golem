@@ -6,52 +6,69 @@ import (
 	"github.com/google/uuid"
 )
 
-// This file defines packets that are shared across multiple protocol states,
-// primarily between Configuration and Play.
+func init() {
+	// Common packets are registered in both configuration and play states
+	states := []protocol.State{protocol.Configuration, protocol.Play}
+
+	for _, state := range states {
+		// Clientbound
+		cb := protocol.Registry[state][protocol.Clientbound]
+		cb.Register(ClientboundKeepAlivePacketID, func() protocol.Packet { return &ClientboundKeepAlivePacket{} })
+		cb.Register(ClientboundPingPacketID, func() protocol.Packet { return &ClientboundPingPacket{} })
+		cb.Register(ClientboundDisconnectPacketID, func() protocol.Packet { return &ClientboundDisconnectPacket{} })
+		cb.Register(ClientboundResourcePackPushPacketID, func() protocol.Packet { return &ClientboundResourcePackPushPacket{} })
+		// TODO: Register more common clientbound packets
+
+		// Serverbound
+		sb := protocol.Registry[state][protocol.Serverbound]
+		sb.Register(ServerboundKeepAlivePacketID, func() protocol.Packet { return &ServerboundKeepAlivePacket{} })
+		sb.Register(ServerboundPongPacketID, func() protocol.Packet { return &ServerboundPongPacket{} })
+		sb.Register(ServerboundClientInformationID, func() protocol.Packet { return &ServerboundClientInformationPacket{} })
+		// TODO: Register more common serverbound packets
+	}
+}
 
 // Packet IDs for common packets.
 const (
-	// Clientbound
-	ClientboundKeepAlivePacketID        = 0x24 // Example ID, will use correct ones
-	ClientboundPingPacketID             = 0x30
-	ClientboundDisconnectPacketID       = 0x1A
-	ClientboundResourcePackPushPacketID = 0x38
+	// Clientbound (example IDs, actual values must be confirmed from wiki.vg for each state)
+	ClientboundDisconnectPacketID       = 0x00 // Configuration state
+	ClientboundKeepAlivePacketID        = 0x03 // Configuration state
+	ClientboundPingPacketID             = 0x04 // Configuration state
+	ClientboundResourcePackPushPacketID = 0x06 // Configuration state
 
 	// Serverbound
-	ServerboundKeepAlivePacketID   = 0x14
-	ServerboundPongPacketID        = 0x1D
-	ServerboundClientInformationID = 0x08
+	ServerboundClientInformationID = 0x00 // Configuration state
+	ServerboundKeepAlivePacketID   = 0x02 // Configuration state
+	ServerboundPongPacketID        = 0x03 // Configuration state
 )
 
 // --- Clientbound ---
 
 type ClientboundKeepAlivePacket struct {
-	ID int64
+	KeepAliveID int64
 }
 
 func (pk *ClientboundKeepAlivePacket) ID() int32 { return ClientboundKeepAlivePacketID }
 func (pk *ClientboundKeepAlivePacket) ReadFrom(r *codec.PacketBuffer) error {
 	var err error
-	pk.ID, err = r.ReadLong()
+	pk.KeepAliveID, err = r.ReadLong()
 	return err
 }
 func (pk *ClientboundKeepAlivePacket) WriteTo(w *codec.PacketBuffer) error {
-	return w.WriteLong(pk.ID)
+	return w.WriteLong(pk.KeepAliveID)
 }
 
 type ClientboundPingPacket struct {
-	ID int32
+	PingID int32
 }
 
 func (pk *ClientboundPingPacket) ID() int32 { return ClientboundPingPacketID }
 func (pk *ClientboundPingPacket) ReadFrom(r *codec.PacketBuffer) error {
 	var err error
-	pk.ID, err = r.ReadInt()
+	pk.PingID, err = r.ReadInt()
 	return err
 }
-func (pk *ClientboundPingPacket) WriteTo(w *codec.PacketBuffer) error {
-	return w.WriteInt(pk.ID)
-}
+func (pk *ClientboundPingPacket) WriteTo(w *codec.PacketBuffer) error { return w.WriteInt(pk.PingID) }
 
 type ClientboundDisconnectPacket struct {
 	Reason protocol.Component
@@ -66,7 +83,7 @@ func (pk *ClientboundDisconnectPacket) WriteTo(w *codec.PacketBuffer) error {
 }
 
 type ClientboundResourcePackPushPacket struct {
-	ID       uuid.UUID
+	UUID     uuid.UUID // Corrected field name from ID to UUID
 	URL      string
 	Hash     string
 	Required bool
@@ -76,7 +93,7 @@ type ClientboundResourcePackPushPacket struct {
 func (pk *ClientboundResourcePackPushPacket) ID() int32 { return ClientboundResourcePackPushPacketID }
 func (pk *ClientboundResourcePackPushPacket) ReadFrom(r *codec.PacketBuffer) error {
 	var err error
-	if pk.ID, err = r.ReadUUID(); err != nil {
+	if pk.UUID, err = r.ReadUUID(); err != nil { // Correctly read into the new field name
 		return err
 	}
 	if pk.URL, err = r.ReadString(32767); err != nil {
@@ -101,9 +118,8 @@ func (pk *ClientboundResourcePackPushPacket) ReadFrom(r *codec.PacketBuffer) err
 	}
 	return nil
 }
-
 func (pk *ClientboundResourcePackPushPacket) WriteTo(w *codec.PacketBuffer) error {
-	w.WriteUUID(pk.ID)
+	w.WriteUUID(pk.UUID)
 	w.WriteString(pk.URL)
 	w.WriteString(pk.Hash)
 	w.WriteBool(pk.Required)
@@ -119,37 +135,89 @@ func (pk *ClientboundResourcePackPushPacket) WriteTo(w *codec.PacketBuffer) erro
 // --- Serverbound ---
 
 type ServerboundKeepAlivePacket struct {
-	ID int64
+	KeepAliveID int64
 }
 
 func (pk *ServerboundKeepAlivePacket) ID() int32 { return ServerboundKeepAlivePacketID }
 func (pk *ServerboundKeepAlivePacket) ReadFrom(r *codec.PacketBuffer) error {
 	var err error
-	pk.ID, err = r.ReadLong()
+	pk.KeepAliveID, err = r.ReadLong()
 	return err
 }
 func (pk *ServerboundKeepAlivePacket) WriteTo(w *codec.PacketBuffer) error {
-	return w.WriteLong(pk.ID)
+	return w.WriteLong(pk.KeepAliveID)
 }
 
 type ServerboundPongPacket struct {
-	ID int32
+	PongID int32
 }
 
 func (pk *ServerboundPongPacket) ID() int32 { return ServerboundPongPacketID }
 func (pk *ServerboundPongPacket) ReadFrom(r *codec.PacketBuffer) error {
 	var err error
-	pk.ID, err = r.ReadInt()
+	pk.PongID, err = r.ReadInt()
 	return err
 }
-func (pk *ServerboundPongPacket) WriteTo(w *codec.PacketBuffer) error {
-	return w.WriteInt(pk.ID)
+func (pk *ServerboundPongPacket) WriteTo(w *codec.PacketBuffer) error { return w.WriteInt(pk.PongID) }
+
+// ClientInformation contains settings from the client.
+type ClientInformation struct {
+	Locale              string
+	ViewDistance        byte
+	ChatMode            int32 // VarInt
+	ChatColors          bool
+	DisplayedSkinParts  byte
+	MainHand            int32 // VarInt
+	TextFiltering       bool
+	AllowServerListings bool
+}
+
+func (ci *ClientInformation) ReadFrom(r *codec.PacketBuffer) (err error) {
+	if ci.Locale, err = r.ReadString(16); err != nil {
+		return
+	}
+	if ci.ViewDistance, err = r.ReadByte(); err != nil {
+		return
+	}
+	if ci.ChatMode, err = r.ReadVarInt(); err != nil {
+		return
+	}
+	if ci.ChatColors, err = r.ReadBool(); err != nil {
+		return
+	}
+	if ci.DisplayedSkinParts, err = r.ReadByte(); err != nil {
+		return
+	}
+	if ci.MainHand, err = r.ReadVarInt(); err != nil {
+		return
+	}
+	if ci.TextFiltering, err = r.ReadBool(); err != nil {
+		return
+	}
+	ci.AllowServerListings, err = r.ReadBool()
+	return
+}
+
+func (ci *ClientInformation) WriteTo(w *codec.PacketBuffer) error {
+	w.WriteString(ci.Locale)
+	w.WriteByte(ci.ViewDistance)
+	w.WriteVarInt(ci.ChatMode)
+	w.WriteBool(ci.ChatColors)
+	w.WriteByte(ci.DisplayedSkinParts)
+	w.WriteVarInt(ci.MainHand)
+	w.WriteBool(ci.TextFiltering)
+	w.WriteBool(ci.AllowServerListings)
+	return nil
 }
 
 type ServerboundClientInformationPacket struct {
-	// Omitting fields for brevity for now. This would include locale, view distance, etc.
+	Info ClientInformation
 }
 
-func (pk *ServerboundClientInformationPacket) ID() int32                            { return ServerboundClientInformationID }
-func (pk *ServerboundClientInformationPacket) ReadFrom(r *codec.PacketBuffer) error { return nil } // TODO
-func (pk *ServerboundClientInformationPacket) WriteTo(w *codec.PacketBuffer) error  { return nil } // TODO
+func (pk *ServerboundClientInformationPacket) ID() int32 { return ServerboundClientInformationID }
+func (pk *ServerboundClientInformationPacket) ReadFrom(r *codec.PacketBuffer) error {
+	return pk.Info.ReadFrom(r)
+}
+func (pk *ServerboundClientInformationPacket) WriteTo(w *codec.PacketBuffer) error {
+	return pk.Info.WriteTo(w)
+}
