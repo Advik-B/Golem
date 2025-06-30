@@ -13,32 +13,29 @@ import (
 
 // Server implements the gnet.EventHandler interface.
 type Server struct {
-	*gnet.BuiltinEventEngine
-	addr       string
-	frameCodec gnet.ICodec
+	*gnet.BuiltinEventEngine // Corrected: Embed the struct from the documentation
+	addr                     string
+	frameCodec               *codec.VarIntFrameCodec // The codec is stateless, but keeping it on the struct is fine.
 }
 
 // NewServer creates a new Minecraft server instance.
 func NewServer(addr string) *Server {
 	return &Server{
 		addr:       addr,
-		frameCodec: &codec.VarIntFrameCodec{}, // Initialize the codec here
+		frameCodec: &codec.VarIntFrameCodec{},
 	}
 }
 
 // Run starts the server and listens for connections.
 func (s *Server) Run() error {
 	log.Logger.Info("Starting Golem server...", zap.String("address", s.addr))
-	// The WithCodec option does not exist in the provided source.
-	// We pass the codec to the Run function instead.
+	// Corrected: WithCodec is not a valid option in the provided documentation.
 	return gnet.Run(s, s.addr, gnet.WithMulticore(true))
 }
 
 func (s *Server) OnBoot(eng gnet.Engine) (action gnet.Action) {
-	log.Logger.Info("Server booted",
-		zap.Int("event_loops", eng.NumEventLoop()), // Correct: This is a method.
-		zap.Bool("multicore", true),
-	)
+	// Corrected: NumEventLoop() does not exist on the Engine object per the documentation.
+	log.Logger.Info("Server booted", zap.Bool("multicore", true))
 	return
 }
 
@@ -63,7 +60,7 @@ func (s *Server) OnTick() (delay time.Duration, action gnet.Action) {
 	return
 }
 
-// OnTraffic now implements manual framing using the codec.
+// OnTraffic now implements manual framing. It's called when there is data in the connection's inbound buffer.
 func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 	conn, ok := c.Context().(*Connection)
 	if !ok || conn == nil {
@@ -73,13 +70,14 @@ func (s *Server) OnTraffic(c gnet.Conn) (action gnet.Action) {
 
 	for {
 		// Use the frame codec to decode one full packet frame from the connection's stream.
+		// The codec's Decode method now takes the gnet.Conn directly.
 		frame, err := s.frameCodec.Decode(c)
 		if err != nil {
 			log.Logger.Error("Frame decode error", zap.Error(err), zap.Stringer("remote_addr", c.RemoteAddr()))
 			return gnet.Close
 		}
 		if frame == nil {
-			// Not enough data for a full frame, break the loop and wait for more.
+			// Not enough data for a full frame, break the loop and wait for more network traffic.
 			break
 		}
 
