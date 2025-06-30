@@ -269,3 +269,20 @@ type ClientLoginPacketListener interface {
 	HandleCompression(pk *ClientboundLoginCompressionPacket) error
 	HandleCustomQuery(pk *ClientboundCustomQueryPacket) error
 }
+
+func init() {
+	// Serverbound
+	sb := protocol.Registry[protocol.Login][protocol.Serverbound]
+	sb.Register(ServerboundHelloPacketID, func() protocol.Packet { return &ServerboundHelloPacket{} })
+	sb.Register(ServerboundKeyPacketID, func() protocol.Packet { return &ServerboundKeyPacket{} })
+	sb.Register(ServerboundCustomQueryAnswerPacketID, func() protocol.Packet { return &ServerboundCustomQueryAnswerPacket{} })
+	sb.Register(ServerboundLoginAcknowledgedPacketID, func() protocol.Packet { return &ServerboundLoginAcknowledgedPacket{} })
+
+	// Clientbound
+	cb := protocol.Registry[protocol.Login][protocol.Clientbound]
+	cb.Register(ClientboundLoginDisconnectPacketID, func() protocol.Packet { return &ClientboundLoginDisconnectPacket{} })
+	cb.Register(ClientboundHelloPacketID, func() protocol.Packet { return &ClientboundHelloPacket{} })
+	cb.Register(ClientboundLoginFinishedPacketID, func() protocol.Packet { return &ClientboundLoginFinishedPacket{} })
+	cb.Register(ClientboundLoginCompressionPacketID, func() protocol.Packet { return &ClientboundLoginCompressionPacket{} })
+	cb.Register(ClientboundCustomQueryPacketID, func() protocol.Packet { return &ClientboundCustomQueryPacket{} })
+}
