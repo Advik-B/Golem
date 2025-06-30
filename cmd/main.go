@@ -5,8 +5,9 @@ import (
 	"github.com/Advik-B/Golem/server"
 
 	// Blank imports to trigger packet registration via init()
-	_ "github.com/Advik-B/Golem/protocol/common"
+	_ "github.com/Advik-B/Golem/protocol/common" // Defines common structs
 	_ "github.com/Advik-B/Golem/protocol/configuration"
+	_ "github.com/Advik-B/Golem/protocol/cookie" // Registers cookie packets
 	_ "github.com/Advik-B/Golem/protocol/handshake"
 	_ "github.com/Advik-B/Golem/protocol/login"
 	_ "github.com/Advik-B/Golem/protocol/status"
