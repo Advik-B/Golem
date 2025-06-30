@@ -1,6 +1,8 @@
 package server
 
 import (
+	"fmt"
+	"github.com/Advik-B/Golem/protocol/codec"
 	"sync"
 	"time"
 
@@ -36,9 +38,24 @@ func (c *Connection) SetState(newState protocol.State) {
 	if c.state != newState {
 		log.Logger.Debug("Connection state changed",
 			zap.Stringer("remote_addr", c.RemoteAddr()),
-			zap.String("from", c.state.String()),
-			zap.String("to", newState.String()),
+			zap.Stringer("from", &c.state),
+			zap.Stringer("to", &newState),
 		)
 		c.state = newState
 	}
+}
+
+// WritePacket encodes a packet and writes it to the connection.
+func (c *Connection) WritePacket(p protocol.Packet) error {
+	// Create a buffer for the packet payload (ID + Data).
+	payloadBuf := codec.NewPacketBuffer(nil)
+	if err := payloadBuf.WriteVarInt(p.ID()); err != nil {
+		return fmt.Errorf("failed to write packet ID: %w", err)
+	}
+	if err := p.WriteTo(payloadBuf); err != nil {
+		return fmt.Errorf("failed to write packet data: %w", err)
+	}
+
+	// The FrameCodec on the server will automatically prepend the final length.
+	return c.AsyncWrite(payloadBuf.Bytes(), nil)
 }
