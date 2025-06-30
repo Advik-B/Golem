@@ -10,38 +10,47 @@ import (
 type VarIntFrameCodec struct{}
 
 func (vc *VarIntFrameCodec) Encode(c gnet.Conn, buf []byte) ([]byte, error) {
-	// The PacketBuffer already writes the VarInt length, so here we just need to prepend it
-	// to the packet payload (ID + data).
 	packetLen := int32(len(buf))
-	varIntLenBuf := make([]byte, 5) // Max 5 bytes for a VarInt
-	n := binary.PutUvarint(varIntLenBuf, uint64(packetLen))
+	// Create a temporary buffer for the VarInt prefix.
+	// 5 bytes is the max size for a VarInt.
+	varIntBuf := make([]byte, 5)
+	n := binary.PutUvarint(varIntBuf, uint64(packetLen))
 
-	return append(varIntLenBuf[:n], buf...), nil
+	// Prepend the VarInt to the original buffer.
+	return append(varIntBuf[:n], buf...), nil
 }
 
 func (vc *VarIntFrameCodec) Decode(c gnet.Conn) ([]byte, error) {
-	// Peek the header to read the VarInt length without consuming the bytes.
+	// Peek the header to read the VarInt length without consuming the bytes from the buffer.
 	header, _ := c.Peek(5)
 	if len(header) == 0 {
-		return nil, nil
+		return nil, nil // Not enough data to read header
 	}
 
+	// Decode the VarInt to find the packet length and the size of the length prefix itself.
 	packetLen, varIntLen := binary.Uvarint(header)
 	if varIntLen <= 0 {
 		return nil, fmt.Errorf("failed to read varint length, read bytes: %d", varIntLen)
 	}
-	if packetLen > 2097151 { // Max packet size
+
+	// Check for Minecraft's max packet size.
+	if packetLen > 2097151 {
 		return nil, fmt.Errorf("packet length %d exceeds max size", packetLen)
 	}
 
-	// Check if the full packet has arrived.
 	fullPacketLen := int(packetLen) + varIntLen
+	// Check if the full packet (prefix + payload) has arrived.
 	if c.InboundBuffered() < fullPacketLen {
 		return nil, nil // Not enough data, wait for more.
 	}
 
-	// Discard the VarInt length prefix from the buffer.
+	// Discard the length prefix from the connection's inbound buffer.
 	c.Discard(varIntLen)
-	// Read the full packet payload.
-	return c.ReadN(int(packetLen))
+	// Read the exact length of the packet payload.
+	payload, err := c.Next(int(packetLen))
+	if err != nil {
+		// This should theoretically not happen if the previous checks pass.
+		return nil, fmt.Errorf("failed to read full packet payload: %w", err)
+	}
+	return payload, nil
 }
