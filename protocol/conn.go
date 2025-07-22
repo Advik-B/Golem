@@ -4,9 +4,9 @@ import (
     "bytes"
     "crypto/rsa"
     "fmt"
+    "github.com/google/uuid"
     "io"
     "net"
-    "github.com/google/uuid"
 )
 
 // State represents the current protocol state of a connection.
