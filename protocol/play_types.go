@@ -272,3 +272,47 @@ func (cs *ChatSession) WriteTo(w io.Writer) (err error) {
     _, err = w.Write(cs.PublicKey.Signature)
     return
 }
+
+// MetadataType defines the type of a metadata entry's value.
+type MetadataType int32
+
+const (
+    MetadataByte MetadataType = iota
+    MetadataInt
+    MetadataLong
+    MetadataFloat
+    MetadataString
+    MetadataComponent
+    MetadataOptionalComponent
+    MetadataItemStack
+    MetadataBoolean
+    MetadataRotations
+    MetadataBlockPos
+    MetadataOptionalBlockPos
+    MetadataDirection
+    MetadataOptionalUUID
+    MetadataBlockState
+    MetadataOptionalBlockState
+    MetadataCompoundTag
+    MetadataParticle
+    MetadataParticles
+    MetadataVillagerData
+    MetadataOptionalUnsignedInt
+    MetadataPose
+    MetadataCatVariant
+    MetadataWolfVariant
+    MetadataFrogVariant
+    MetadataOptionalGlobalPos
+    MetadataPaintingVariant
+    MetadataSnifferState
+    MetadataArmadilloState
+    MetadataVector3
+    MetadataQuaternion
+)
+
+// MetadataEntry represents a single piece of entity metadata.
+type MetadataEntry struct {
+    Key   uint8
+    Type  MetadataType
+    Value interface{} // The type of Value depends on the Type field.
+}
