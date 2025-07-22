@@ -1,12 +1,14 @@
+// File: protocol/rw.go
 package protocol
 
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/Advik-B/Golem/nbt"
-	"github.com/google/uuid"
 	"io"
 	"strings"
+
+	"github.com/Advik-B/Golem/nbt"
+	"github.com/google/uuid"
 )
 
 const (
@@ -39,14 +41,20 @@ func ReadInt8(r io.Reader) (int8, error) {
 	return int8(val), err
 }
 
+func ReadUint16(r io.Reader) (uint16, error) {
+	var val uint16
+	err := binary.Read(r, binary.BigEndian, &val)
+	return val, err
+}
+
 func ReadInt16(r io.Reader) (int16, error) {
 	var val int16
 	err := binary.Read(r, binary.BigEndian, &val)
 	return val, err
 }
 
-func ReadUint16(r io.Reader) (uint16, error) {
-	var val uint16
+func ReadUint32(r io.Reader) (uint32, error) { // Added this function
+	var val uint32
 	err := binary.Read(r, binary.BigEndian, &val)
 	return val, err
 }
@@ -95,11 +103,15 @@ func WriteInt8(w io.Writer, v int8) error {
 	return WriteUint8(w, uint8(v))
 }
 
+func WriteUint16(w io.Writer, v uint16) error {
+	return binary.Write(w, binary.BigEndian, v)
+}
+
 func WriteInt16(w io.Writer, v int16) error {
 	return binary.Write(w, binary.BigEndian, v)
 }
 
-func WriteUint16(w io.Writer, v uint16) error {
+func WriteUint32(w io.Writer, v uint32) error { // Added this function
 	return binary.Write(w, binary.BigEndian, v)
 }
 
@@ -245,23 +257,29 @@ func ReadNBT(r io.Reader) (nbt.Tag, error) {
 	// For this, we need a reader that supports peeking.
 	br, ok := r.(io.ByteReader)
 	if !ok {
-		return nil, fmt.Errorf("reader does not implement io.ByteReader, cannot safely read NBT")
+		// Fallback for readers that don't support ByteReader.
+		// This is less efficient as it involves a temporary buffer.
+		var firstByte [1]byte
+		if _, err := io.ReadFull(r, firstByte[:]); err != nil {
+			return nil, err // Could be EOF for optional NBT
+		}
+		if firstByte[0] == nbt.TagEnd {
+			return nil, nil // No NBT
+		}
+		// Re-join the byte to the stream for the NBT parser.
+		r = io.MultiReader(strings.NewReader(string(firstByte[:])), r)
+	} else {
+		firstByte, err := br.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		if firstByte == nbt.TagEnd {
+			return nil, nil
+		}
+		r = io.MultiReader(strings.NewReader(string(firstByte)), r.(io.Reader))
 	}
 
-	firstByte, err := br.ReadByte()
-	if err != nil {
-		return nil, err // Could be EOF, which is fine in some optional cases.
-	}
-
-	if firstByte == nbt.TagEnd {
-		return nil, nil // No NBT data
-	}
-
-	// The reader is now one byte ahead. We need a way to "unread" the byte.
-	// A simple way is to create a new reader that prepends the byte we just read.
-	multiReader := io.MultiReader(io.LimitReader(strings.NewReader(string(firstByte)), 1), r)
-
-	namedTag, err := nbt.Read(multiReader)
+	namedTag, err := nbt.Read(r)
 	if err != nil {
 		return nil, err
 	}
