@@ -2,6 +2,7 @@ package protocol
 
 import (
     "github.com/Advik-B/Golem/nbt"
+    "github.com/google/uuid"
     "io"
 )
 
@@ -211,4 +212,63 @@ func (si *SpawnInfo) WriteTo(w io.Writer) (err error) {
         return
     }
     return WriteVarInt(w, si.SeaLevel)
+}
+
+// --- Chat Session ---
+// This is the type that was missing.
+type ChatSession struct {
+    SessionUUID uuid.UUID
+    PublicKey   struct {
+        ExpireTime int64
+        KeyBytes   []byte
+        Signature  []byte
+    }
+}
+
+func (cs *ChatSession) ReadFrom(r io.Reader) (err error) {
+    if cs.SessionUUID, err = ReadUUID(r); err != nil {
+        return
+    }
+    if cs.PublicKey.ExpireTime, err = ReadInt64(r); err != nil {
+        return
+    }
+
+    keyLen, err := ReadVarInt(r)
+    if err != nil {
+        return
+    }
+    cs.PublicKey.KeyBytes = make([]byte, keyLen)
+    if _, err = io.ReadFull(r, cs.PublicKey.KeyBytes); err != nil {
+        return
+    }
+
+    sigLen, err := ReadVarInt(r)
+    if err != nil {
+        return
+    }
+    cs.PublicKey.Signature = make([]byte, sigLen)
+    _, err = io.ReadFull(r, cs.PublicKey.Signature)
+    return
+}
+
+func (cs *ChatSession) WriteTo(w io.Writer) (err error) {
+    if err = WriteUUID(w, cs.SessionUUID); err != nil {
+        return
+    }
+    if err = WriteInt64(w, cs.PublicKey.ExpireTime); err != nil {
+        return
+    }
+
+    if err = WriteVarInt(w, int32(len(cs.PublicKey.KeyBytes))); err != nil {
+        return
+    }
+    if _, err = w.Write(cs.PublicKey.KeyBytes); err != nil {
+        return
+    }
+
+    if err = WriteVarInt(w, int32(len(cs.PublicKey.Signature))); err != nil {
+        return
+    }
+    _, err = w.Write(cs.PublicKey.Signature)
+    return
 }
